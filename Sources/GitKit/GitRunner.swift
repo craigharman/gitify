@@ -15,6 +15,15 @@ public struct GitProgressLine: Sendable {
     public let text: String
 }
 
+/// Mutable storage shared across the pipe-reading dispatch closures. Access is synchronized
+/// by the surrounding `DispatchGroup` (writes complete before `group.wait()` returns), so
+/// `@unchecked Sendable` is sound here.
+private final class CaptureBox: @unchecked Sendable {
+    var stdout = Data()
+    var stderr = Data()
+    var stderrText = ""
+}
+
 /// Serializes invocations of the user's `git` binary for a single repository.
 ///
 /// We shell out to the installed `git` (rather than libgit2) so that semantics,
@@ -78,17 +87,16 @@ public actor GitRunner {
                 process.standardOutput = stdoutPipe
                 process.standardError = stderrPipe
 
-                var outData = Data()
-                var errData = Data()
+                let box = CaptureBox()
                 let group = DispatchGroup()
                 group.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
-                    outData = (try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data()
+                    box.stdout = (try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data()
                     group.leave()
                 }
                 group.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
-                    errData = (try? stderrPipe.fileHandleForReading.readToEnd()) ?? Data()
+                    box.stderr = (try? stderrPipe.fileHandleForReading.readToEnd()) ?? Data()
                     group.leave()
                 }
 
@@ -105,8 +113,8 @@ public actor GitRunner {
 
                 continuation.resume(returning: GitProcessResult(
                     exitCode: process.terminationStatus,
-                    stdout: outData,
-                    stderr: String(decoding: errData, as: UTF8.self)
+                    stdout: box.stdout,
+                    stderr: String(decoding: box.stderr, as: UTF8.self)
                 ))
             }
         }
@@ -130,5 +138,84 @@ public actor GitRunner {
     /// Convenience: run and decode stdout as a UTF-8 string.
     public func runString(_ arguments: [String]) async throws -> String {
         String(decoding: try await run(arguments), as: UTF8.self)
+    }
+
+    /// Runs `git <arguments>`, streaming stderr progress lines to `onProgress` as they
+    /// arrive (git writes `--progress` output to stderr, updating in place with `\r`).
+    /// Throws `GitError.commandFailed` on a non-zero exit.
+    @discardableResult
+    public func runStreaming(
+        _ arguments: [String],
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) async throws -> GitProcessResult {
+        let executableURL = self.executableURL
+        let workingDirectory = self.workingDirectory
+        let environment = GitRunner.baseEnvironment
+
+        let result: GitProcessResult = try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = executableURL
+                process.arguments = arguments
+                process.environment = environment
+                if let workingDirectory { process.currentDirectoryURL = workingDirectory }
+
+                let stdoutPipe = Pipe()
+                let stderrPipe = Pipe()
+                process.standardOutput = stdoutPipe
+                process.standardError = stderrPipe
+
+                let box = CaptureBox()
+                let group = DispatchGroup()
+
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    box.stdout = (try? stdoutPipe.fileHandleForReading.readToEnd()) ?? Data()
+                    group.leave()
+                }
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let handle = stderrPipe.fileHandleForReading
+                    var pending = ""
+                    while case let chunk = handle.availableData, !chunk.isEmpty {
+                        let text = String(decoding: chunk, as: UTF8.self)
+                        box.stderrText += text
+                        pending += text
+                        // Progress updates are delimited by \r or \n.
+                        var line = ""
+                        for character in pending {
+                            if character == "\r" || character == "\n" {
+                                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                                if !trimmed.isEmpty { onProgress?(trimmed) }
+                                line = ""
+                            } else {
+                                line.append(character)
+                            }
+                        }
+                        pending = line
+                    }
+                    group.leave()
+                }
+
+                do {
+                    try process.run()
+                } catch {
+                    continuation.resume(throwing: GitError.gitUnavailable(
+                        "\(executableURL.path): \(error.localizedDescription)"))
+                    return
+                }
+
+                process.waitUntilExit()
+                group.wait()
+                continuation.resume(returning: GitProcessResult(
+                    exitCode: process.terminationStatus, stdout: box.stdout, stderr: box.stderrText))
+            }
+        }
+
+        guard result.succeeded else {
+            throw GitError.commandFailed(command: arguments.joined(separator: " "),
+                                         exitCode: result.exitCode, stderr: result.stderr)
+        }
+        return result
     }
 }

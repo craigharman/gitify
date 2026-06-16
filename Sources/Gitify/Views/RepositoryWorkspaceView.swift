@@ -11,6 +11,7 @@ enum WorkspaceSection: Hashable {
     case tags
     case stashes
     case worktrees
+    case reflog
 }
 
 /// A repository's workspace: an inner section rail plus the section's content.
@@ -35,13 +36,30 @@ struct RepositoryWorkspaceView: View {
         .navigationTitle(ref.name)
         .toolbar {
             ToolbarItemGroup {
-                Button {
-                    Task { await viewModel.load() }
-                } label: {
+                Button { Task { await viewModel.fetch() } } label: {
+                    Label("Fetch", systemImage: "arrow.down.circle")
+                }
+                .help("Fetch from all remotes").disabled(viewModel.isBusy)
+
+                Button { Task { await viewModel.pull() } } label: {
+                    Label("Pull", systemImage: "arrow.down.to.line")
+                }
+                .help("Pull current branch").disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
+
+                Button { Task { await viewModel.push() } } label: {
+                    Label("Push", systemImage: "arrow.up.to.line")
+                }
+                .help("Push current branch").disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
+
+                Button { promptNewBranch() } label: {
+                    Label("New Branch", systemImage: "plus.square.on.square")
+                }
+                .help("Create a branch")
+
+                Button { Task { await viewModel.load() } } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .help("Refresh")
-                .disabled(viewModel.isLoading)
+                .help("Refresh").disabled(viewModel.isLoading)
             }
         }
         .task { await viewModel.load() }
@@ -50,6 +68,19 @@ struct RepositoryWorkspaceView: View {
                 ErrorBanner(message: error)
             }
         }
+        .overlay {
+            if viewModel.isBusy {
+                OperationOverlay(title: viewModel.operationTitle ?? "Working",
+                                 detail: viewModel.operationProgress)
+            }
+        }
+    }
+
+    private func promptNewBranch() {
+        guard let name = Prompt.text(title: "New Branch",
+                                     message: "Create and switch to a new branch from HEAD.",
+                                     confirm: "Create") else { return }
+        Task { await viewModel.createBranch(name: name, checkout: true) }
     }
 
     @ViewBuilder
@@ -62,13 +93,38 @@ struct RepositoryWorkspaceView: View {
         case .history, .branch:
             HistoryView(viewModel: viewModel)
         case .remotes:
-            RefListView(title: "Remote Branches", refs: viewModel.remoteBranches, symbol: "cloud")
+            RefListView(title: "Remote Branches", refs: viewModel.remoteBranches, symbol: "cloud", viewModel: viewModel)
         case .tags:
-            RefListView(title: "Tags", refs: viewModel.tags, symbol: "tag")
+            RefListView(title: "Tags", refs: viewModel.tags, symbol: "tag", viewModel: viewModel)
         case .stashes:
             StashesView(viewModel: viewModel)
         case .worktrees:
             WorktreesView(viewModel: viewModel)
+        case .reflog:
+            ReflogView(viewModel: viewModel)
+        }
+    }
+}
+
+/// Modal overlay shown during fetch/pull/push, surfacing live git progress lines.
+private struct OperationOverlay: View {
+    let title: String
+    let detail: String?
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.15).ignoresSafeArea()
+            VStack(spacing: 10) {
+                ProgressView()
+                Text(title).font(.headline)
+                if let detail, !detail.isEmpty {
+                    Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        .lineLimit(1).frame(maxWidth: 320)
+                }
+            }
+            .padding(24)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .shadow(radius: 20)
         }
     }
 }
@@ -118,12 +174,16 @@ private struct WorkspaceRail: View {
                         HStack {
                             Text(branch.name)
                             Spacer()
+                            if let ahead = branch.ahead, let behind = branch.behind, ahead + behind > 0 {
+                                Text("↑\(ahead) ↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                            }
                             if branch.isHead { Image(systemName: "checkmark").foregroundStyle(.secondary) }
                         }
                     } icon: {
                         Image(systemName: "arrow.triangle.branch")
                     }
                     .tag(WorkspaceSection.branch(branch.name))
+                    .contextMenu { branchMenu(branch) }
                 }
             }
 
@@ -132,6 +192,9 @@ private struct WorkspaceRail: View {
             }
             Section("Tags") {
                 Label("Tags", systemImage: "tag").tag(WorkspaceSection.tags)
+            }
+            Section("Reflog") {
+                Label("Reflog", systemImage: "clock.arrow.circlepath").tag(WorkspaceSection.reflog)
             }
         }
         .listStyle(.sidebar)
@@ -150,6 +213,36 @@ private struct WorkspaceRail: View {
                 .background(.bar)
             }
         }
+    }
+
+    @ViewBuilder
+    private func branchMenu(_ branch: Ref) -> some View {
+        if !branch.isHead {
+            Button("Checkout") { Task { await viewModel.checkout(branch.name) } }
+        }
+        Button("Rename…") {
+            if let name = Prompt.text(title: "Rename Branch", defaultValue: branch.name, confirm: "Rename") {
+                Task { await viewModel.renameBranch(branch, to: name) }
+            }
+        }
+        Button("New Branch from Here…") {
+            if let name = Prompt.text(title: "New Branch", message: "Create from \(branch.name).", confirm: "Create") {
+                Task { await viewModel.createBranch(name: name, checkout: true) }
+            }
+        }
+        Divider()
+        Button("Delete", role: .destructive) {
+            guard !branch.isHead else {
+                _ = Prompt.confirmDestructive(title: "Can’t Delete Current Branch",
+                                              message: "Check out another branch first.", confirm: "OK")
+                return
+            }
+            if Prompt.confirmDestructive(title: "Delete “\(branch.name)”?",
+                                         message: "This removes the local branch.", confirm: "Delete") {
+                Task { await viewModel.forceDeleteBranch(branch) }
+            }
+        }
+        .disabled(branch.isHead)
     }
 }
 

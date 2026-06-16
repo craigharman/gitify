@@ -24,13 +24,15 @@ struct RepositoryListView: View {
         }
         .safeAreaInset(edge: .bottom) {
             HStack {
-                Button {
-                    Task { await model.promptToAddRepository() }
+                Menu {
+                    Button("Add Existing Repository…") { Task { await model.promptToAddRepository() } }
+                    Button("Clone Repository…") { Task { await model.promptToClone() } }
                 } label: {
                     Image(systemName: "plus")
                 }
-                .buttonStyle(.borderless)
-                .help("Add Repository")
+                .menuStyle(.borderlessButton)
+                .frame(width: 24)
+                .help("Add or clone a repository")
                 Spacer()
             }
             .padding(8)

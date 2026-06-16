@@ -168,4 +168,144 @@ public struct CLIGitService: GitService {
         guard result.succeeded else { return "" }
         return result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    // MARK: - Remotes & reflog
+
+    public func remotes() async throws -> [GitRemote] {
+        let output = try await runner.runString(["remote", "-v"])
+        return RemoteParser.parse(output)
+    }
+
+    public func reflog(limit: Int) async throws -> [ReflogEntry] {
+        let format = ["%gd", "%H", "%gs", "%cI"].joined(separator: unitSeparator)
+        let output = try await runner.runString(["reflog", "--format=\(format)", "-n", "\(limit)"])
+        return ReflogParser.parse(output)
+    }
+
+    // MARK: - Branches & tags
+
+    public func checkout(_ revision: String) async throws {
+        try await runner.run(["checkout", revision])
+    }
+
+    public func createBranch(name: String, startPoint: String?, checkout: Bool) async throws {
+        if checkout {
+            var args = ["switch", "-c", name]
+            if let startPoint { args.append(startPoint) }
+            try await runner.run(args)
+        } else {
+            var args = ["branch", name]
+            if let startPoint { args.append(startPoint) }
+            try await runner.run(args)
+        }
+    }
+
+    public func deleteBranch(name: String, force: Bool) async throws {
+        try await runner.run(["branch", force ? "-D" : "-d", name])
+    }
+
+    public func renameBranch(from oldName: String, to newName: String) async throws {
+        try await runner.run(["branch", "-m", oldName, newName])
+    }
+
+    public func createTag(name: String, target: String?, message: String?) async throws {
+        var args = ["tag"]
+        if let message { args.append(contentsOf: ["-a", "-m", message]) }
+        args.append(name)
+        if let target { args.append(target) }
+        try await runner.run(args)
+    }
+
+    public func deleteTag(name: String) async throws {
+        try await runner.run(["tag", "-d", name])
+    }
+
+    // MARK: - Stashes
+
+    public func stashPush(message: String?, includeUntracked: Bool) async throws {
+        var args = ["stash", "push"]
+        if includeUntracked { args.append("--include-untracked") }
+        if let message { args.append(contentsOf: ["-m", message]) }
+        try await runner.run(args)
+    }
+
+    public func stashApply(_ selector: String) async throws {
+        try await runner.run(["stash", "apply", selector])
+    }
+
+    public func stashPop(_ selector: String) async throws {
+        try await runner.run(["stash", "pop", selector])
+    }
+
+    public func stashDrop(_ selector: String) async throws {
+        try await runner.run(["stash", "drop", selector])
+    }
+
+    // MARK: - Worktrees
+
+    public func addWorktree(path: String, branch: String?, createBranch: Bool) async throws {
+        var args = ["worktree", "add"]
+        if createBranch, let branch { args.append(contentsOf: ["-b", branch]) }
+        args.append(path)
+        if !createBranch, let branch { args.append(branch) }
+        try await runner.run(args)
+    }
+
+    public func removeWorktree(path: String, force: Bool) async throws {
+        var args = ["worktree", "remove"]
+        if force { args.append("--force") }
+        args.append(path)
+        try await runner.run(args)
+    }
+
+    public func pruneWorktrees() async throws {
+        try await runner.run(["worktree", "prune"])
+    }
+
+    // MARK: - Network
+
+    public func fetch(remote: String?, onProgress: (@Sendable (String) -> Void)?) async throws {
+        var args = ["fetch", "--progress", "--prune"]
+        if let remote { args.append(remote) } else { args.append("--all") }
+        try await runner.runStreaming(args, onProgress: onProgress)
+    }
+
+    public func pull(onProgress: (@Sendable (String) -> Void)?) async throws {
+        try await runner.runStreaming(["pull", "--progress"], onProgress: onProgress)
+    }
+
+    public func push(remote: String?, branch: String?, setUpstream: Bool,
+                     onProgress: (@Sendable (String) -> Void)?) async throws {
+        var args = ["push", "--progress"]
+        if setUpstream { args.append("--set-upstream") }
+        if let remote { args.append(remote) }
+        if let branch { args.append(branch) }
+        try await runner.runStreaming(args, onProgress: onProgress)
+    }
+
+    // MARK: - Clone (repository-independent)
+
+    /// Clones `url` into a new directory named after the repo (or `name`) under `parent`,
+    /// returning the path to the created working tree.
+    public static func clone(
+        url: String, into parent: URL, name: String? = nil,
+        executablePath: String? = nil,
+        onProgress: (@Sendable (String) -> Void)? = nil
+    ) async throws -> URL {
+        let folder = name ?? defaultCloneFolderName(for: url)
+        let destination = parent.appendingPathComponent(folder)
+        let runner = GitRunner(workingDirectory: parent, executablePath: executablePath)
+        try await runner.runStreaming(["clone", "--progress", url, folder], onProgress: onProgress)
+        return destination
+    }
+
+    /// Derives the default checkout folder from a clone URL (strips `.git`).
+    static func defaultCloneFolderName(for url: String) -> String {
+        var last = url
+        if let slash = url.lastIndex(where: { $0 == "/" || $0 == ":" }) {
+            last = String(url[url.index(after: slash)...])
+        }
+        if last.hasSuffix(".git") { last = String(last.dropLast(4)) }
+        return last.isEmpty ? "repository" : last
+    }
 }

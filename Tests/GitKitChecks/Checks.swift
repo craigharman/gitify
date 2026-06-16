@@ -19,6 +19,12 @@ enum Checks {
         await test("discard reverts tracked and removes untracked", discard)
         await test("graph layout keeps linear history in one lane", graphLinear)
         await test("graph layout diverges and merges a branch", graphBranchMerge)
+        await test("branch create/checkout/rename/delete", branchOps)
+        await test("tag create and delete", tagOps)
+        await test("stash push/apply/pop/drop", stashOps)
+        await test("worktree add and remove", worktreeOps)
+        await test("reflog lists recent HEAD movements", reflogOps)
+        await test("remotes/push/fetch/clone round-trip", remoteOps)
     }
 
     /// Builds a bare `Commit` for graph-layout tests (only id/parents matter).
@@ -264,5 +270,107 @@ enum Checks {
         await expectEqual(restored, "original\n", "tracked file reverted")
         await expect(!FileManager.default.fileExists(atPath: repo.url.appendingPathComponent("untracked.txt").path),
                      "untracked file removed")
+    }
+
+    static func branchOps() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial")
+        let service = try await repo.service()
+
+        try await service.createBranch(name: "feature", startPoint: nil, checkout: true)
+        var refs = try await service.refs()
+        await expect(refs.first { $0.name == "feature" }?.isHead == true, "feature checked out")
+
+        try await service.checkout("main")
+        try await service.renameBranch(from: "feature", to: "feat")
+        refs = try await service.refs()
+        await expect(refs.contains { $0.name == "feat" }, "branch renamed")
+        await expect(!refs.contains { $0.name == "feature" }, "old name gone")
+
+        try await service.deleteBranch(name: "feat", force: true)
+        refs = try await service.refs()
+        await expect(!refs.contains { $0.name == "feat" }, "branch deleted")
+    }
+
+    static func tagOps() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial")
+        let service = try await repo.service()
+
+        try await service.createTag(name: "v1.0", target: nil, message: "release one")
+        await expect(try await service.refs().contains { $0.kind == .tag && $0.name == "v1.0" }, "tag created")
+
+        try await service.deleteTag(name: "v1.0")
+        await expect(!(try await service.refs().contains { $0.kind == .tag && $0.name == "v1.0" }), "tag deleted")
+    }
+
+    static func stashOps() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "v1\n")
+        let service = try await repo.service()
+
+        try repo.write("f.txt", "v2\n")
+        try await service.stashPush(message: "wip", includeUntracked: false)
+        await expect(try await service.status().hasChanges == false, "clean after stash")
+        await expectEqual(try await service.stashes().count, 1, "one stash")
+
+        try await service.stashApply("stash@{0}")
+        await expect(try await service.status().hasChanges, "changes restored by apply")
+        await expectEqual(try await service.stashes().count, 1, "apply keeps stash")
+
+        try await service.stashDrop("stash@{0}")
+        await expectEqual(try await service.stashes().count, 0, "stash dropped")
+    }
+
+    static func worktreeOps() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial")
+        let service = try await repo.service()
+
+        let linked = repo.url.deletingLastPathComponent().appendingPathComponent("wt-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: linked) }
+        try await service.addWorktree(path: linked.path, branch: "wt-branch", createBranch: true)
+        await expectEqual(try await service.worktrees().count, 2, "worktree added")
+
+        try await service.removeWorktree(path: linked.path, force: true)
+        await expectEqual(try await service.worktrees().count, 1, "worktree removed")
+    }
+
+    static func reflogOps() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("first")
+        try await repo.commit("second")
+        let entries = try await repo.service().reflog(limit: 10)
+        await expect(!entries.isEmpty, "reflog has entries")
+        await expectEqual(entries.first?.selector, "HEAD@{0}", "newest selector")
+        await expect(entries.first?.action == "commit", "newest action is commit")
+    }
+
+    static func remoteOps() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "hello\n")
+        let service = try await repo.service()
+
+        // Stand up a bare repo to act as the remote.
+        let bare = FileManager.default.temporaryDirectory.appendingPathComponent("remote-" + UUID().uuidString + ".git")
+        defer { try? FileManager.default.removeItem(at: bare) }
+        let bareRunner = GitRunner(workingDirectory: nil)
+        try await bareRunner.run(["init", "--bare", "-q", bare.path])
+
+        try await repo.git("remote", "add", "origin", bare.path)
+        let remotes = try await service.remotes()
+        await expectEqual(remotes.first?.name, "origin", "remote listed")
+        await expectEqual(remotes.first?.fetchURL, bare.path, "remote url captured")
+
+        try await service.push(remote: "origin", branch: "main", setUpstream: true, onProgress: nil)
+        try await service.fetch(remote: "origin", onProgress: nil) // should not throw
+
+        // Clone the bare into a fresh directory and confirm the file arrived.
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let cloned = try await CLIGitService.clone(url: bare.path, into: parent, name: "work", onProgress: nil)
+        await expect(FileManager.default.fileExists(atPath: cloned.appendingPathComponent("f.txt").path),
+                     "cloned working tree has file")
     }
 }

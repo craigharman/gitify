@@ -60,6 +60,71 @@ public protocol GitService: Sendable {
 
     /// The message of the most recent commit (for pre-filling an amend).
     func lastCommitMessage() async throws -> String
+
+    // MARK: Remotes & reflog
+
+    /// Configured remotes.
+    func remotes() async throws -> [GitRemote]
+
+    /// Recent reflog entries (HEAD), newest first.
+    func reflog(limit: Int) async throws -> [ReflogEntry]
+
+    // MARK: Branches & tags
+
+    /// Checks out an existing branch, tag, or commit.
+    func checkout(_ revision: String) async throws
+
+    /// Creates a branch at `startPoint` (default HEAD), optionally checking it out.
+    func createBranch(name: String, startPoint: String?, checkout: Bool) async throws
+
+    /// Deletes a local branch (`-d`, or `-D` when `force`).
+    func deleteBranch(name: String, force: Bool) async throws
+
+    /// Renames a local branch.
+    func renameBranch(from oldName: String, to newName: String) async throws
+
+    /// Creates a tag (annotated when `message` is non-nil) at `target` (default HEAD).
+    func createTag(name: String, target: String?, message: String?) async throws
+
+    /// Deletes a tag.
+    func deleteTag(name: String) async throws
+
+    // MARK: Stashes
+
+    /// Stashes working-tree changes.
+    func stashPush(message: String?, includeUntracked: Bool) async throws
+
+    /// Applies a stash without removing it.
+    func stashApply(_ selector: String) async throws
+
+    /// Applies a stash and removes it.
+    func stashPop(_ selector: String) async throws
+
+    /// Drops a stash.
+    func stashDrop(_ selector: String) async throws
+
+    // MARK: Worktrees
+
+    /// Adds a worktree at `path`, optionally checking out / creating `branch`.
+    func addWorktree(path: String, branch: String?, createBranch: Bool) async throws
+
+    /// Removes a worktree (`--force` when `force`).
+    func removeWorktree(path: String, force: Bool) async throws
+
+    /// Prunes stale worktree administrative entries.
+    func pruneWorktrees() async throws
+
+    // MARK: Network (streamed progress)
+
+    /// Fetches from a remote (all remotes when `remote` is nil), pruning deleted refs.
+    func fetch(remote: String?, onProgress: (@Sendable (String) -> Void)?) async throws
+
+    /// Pulls the current branch from its upstream.
+    func pull(onProgress: (@Sendable (String) -> Void)?) async throws
+
+    /// Pushes `branch` (default current) to `remote`, optionally setting upstream.
+    func push(remote: String?, branch: String?, setUpstream: Bool,
+              onProgress: (@Sendable (String) -> Void)?) async throws
 }
 
 public extension GitService {

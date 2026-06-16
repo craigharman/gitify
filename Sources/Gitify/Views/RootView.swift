@@ -26,5 +26,23 @@ struct RootView: View {
                 }
             }
         }
+        .overlay {
+            if model.isCloning {
+                ZStack {
+                    Color.black.opacity(0.15).ignoresSafeArea()
+                    VStack(spacing: 10) {
+                        ProgressView()
+                        Text("Cloning…").font(.headline)
+                        if let progress = model.cloneProgress, !progress.isEmpty {
+                            Text(progress).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                .lineLimit(1).frame(maxWidth: 320)
+                        }
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .shadow(radius: 20)
+                }
+            }
+        }
     }
 }

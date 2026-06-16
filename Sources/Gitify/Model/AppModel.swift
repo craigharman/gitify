@@ -9,6 +9,10 @@ final class AppModel {
     private(set) var repositories: [RepositoryRef]
     var selectedRepositoryID: RepositoryRef.ID?
 
+    // Clone progress state, surfaced as an overlay while a clone runs.
+    private(set) var cloneProgress: String?
+    var isCloning: Bool { cloneProgress != nil }
+
     private let store = RepositoryStore()
 
     init() {
@@ -46,6 +50,28 @@ final class AppModel {
         repositories.append(ref)
         store.save(repositories)
         selectedRepositoryID = ref.id
+    }
+
+    /// Prompts for a URL and destination, clones, and adds the result.
+    func promptToClone() async {
+        guard !isCloning else { return }
+        guard let url = Prompt.text(title: "Clone Repository",
+                                    message: "Enter a Git URL (https or ssh).",
+                                    confirm: "Choose Location…") else { return }
+        guard let parent = Prompt.chooseDirectory(prompt: "Clone Here",
+                                                  message: "Choose where to clone the repository") else { return }
+        cloneProgress = "Starting…"
+        defer { cloneProgress = nil }
+
+        let progress: @Sendable (String) -> Void = { [weak self] line in
+            Task { @MainActor in self?.cloneProgress = line }
+        }
+        do {
+            let dest = try await CLIGitService.clone(url: url, into: parent, onProgress: progress)
+            await add(directory: dest)
+        } catch {
+            presentError("Clone failed: \(error)")
+        }
     }
 
     func remove(_ ref: RepositoryRef) {

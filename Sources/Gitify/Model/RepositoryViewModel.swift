@@ -14,9 +14,16 @@ final class RepositoryViewModel {
     private(set) var graph: CommitGraph = .empty
     private(set) var worktrees: [Worktree] = []
     private(set) var stashes: [Stash] = []
+    private(set) var remotes: [GitRemote] = []
+    private(set) var reflog: [ReflogEntry] = []
 
     private(set) var isLoading = false
     private(set) var loadError: String?
+
+    // Long-running network operation state (fetch/pull/push/clone).
+    private(set) var operationTitle: String?
+    private(set) var operationProgress: String?
+    var isBusy: Bool { operationTitle != nil }
 
     // Working-tree / staging state.
     var selectedPath: String?
@@ -53,10 +60,15 @@ final class RepositoryViewModel {
             async let stashes = service.stashes()
             async let firstPage = service.log(skip: 0, limit: 150)
 
+            async let remotes = service.remotes()
+            async let reflog = service.reflog(limit: 200)
+
             self.status = try await status
             self.refs = try await refs
             self.worktrees = try await worktrees
             self.stashes = try await stashes
+            self.remotes = (try? await remotes) ?? []
+            self.reflog = (try? await reflog) ?? []
             let page = try await firstPage
             self.commits = page.commits
             self.nextSkip = page.nextSkip
@@ -171,5 +183,107 @@ final class RepositoryViewModel {
         let service = try await CLIGitService(directory: ref.url)
         self.service = service
         return service
+    }
+
+    // MARK: - Branch / tag / stash / worktree actions
+
+    /// Runs a local mutation then reloads all repository data.
+    private func perform(_ action: (CLIGitService) async throws -> Void) async {
+        guard let service else { return }
+        do {
+            try await action(service)
+            await reloadEverything()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    func checkout(_ revision: String) async { await perform { try await $0.checkout(revision) } }
+    func createBranch(name: String, checkout: Bool) async {
+        await perform { try await $0.createBranch(name: name, startPoint: nil, checkout: checkout) }
+    }
+    func deleteBranch(_ ref: Ref) async { await perform { try await $0.deleteBranch(name: ref.name, force: false) } }
+    func forceDeleteBranch(_ ref: Ref) async { await perform { try await $0.deleteBranch(name: ref.name, force: true) } }
+    func renameBranch(_ ref: Ref, to newName: String) async {
+        await perform { try await $0.renameBranch(from: ref.name, to: newName) }
+    }
+    func createTag(name: String, on revision: String?, message: String?) async {
+        await perform { try await $0.createTag(name: name, target: revision, message: message) }
+    }
+    func deleteTag(_ ref: Ref) async { await perform { try await $0.deleteTag(name: ref.name) } }
+
+    func stashChanges(message: String?) async {
+        await perform { try await $0.stashPush(message: message, includeUntracked: true) }
+    }
+    func applyStash(_ stash: Stash) async { await perform { try await $0.stashApply(stash.id) } }
+    func popStash(_ stash: Stash) async { await perform { try await $0.stashPop(stash.id) } }
+    func dropStash(_ stash: Stash) async { await perform { try await $0.stashDrop(stash.id) } }
+
+    func addWorktree(path: String, branch: String?, create: Bool) async {
+        await perform { try await $0.addWorktree(path: path, branch: branch, createBranch: create) }
+    }
+    func removeWorktree(_ worktree: Worktree) async {
+        await perform { try await $0.removeWorktree(path: worktree.path, force: false) }
+    }
+
+    // MARK: - Network actions (with progress)
+
+    func fetch() async {
+        await runOperation("Fetching") { service, progress in
+            try await service.fetch(remote: nil, onProgress: progress)
+        }
+    }
+    func pull() async {
+        await runOperation("Pulling") { service, progress in
+            try await service.pull(onProgress: progress)
+        }
+    }
+    func push() async {
+        let setUpstream = currentBranch?.upstream == nil
+        await runOperation("Pushing") { service, progress in
+            try await service.push(remote: nil, branch: nil, setUpstream: setUpstream, onProgress: progress)
+        }
+    }
+
+    /// Runs a streamed network operation, surfacing live progress, then reloads.
+    private func runOperation(
+        _ title: String,
+        _ action: (CLIGitService, @escaping @Sendable (String) -> Void) async throws -> Void
+    ) async {
+        guard let service, !isBusy else { return }
+        operationTitle = title
+        operationProgress = nil
+        defer { operationTitle = nil; operationProgress = nil }
+
+        let progress: @Sendable (String) -> Void = { [weak self] line in
+            Task { @MainActor in self?.operationProgress = line }
+        }
+        do {
+            try await action(service, progress)
+            await reloadEverything()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    /// Reloads status, refs, history, worktrees, stashes, remotes, and reflog.
+    private func reloadEverything() async {
+        guard let service else { return }
+        status = try? await service.status()
+        refs = (try? await service.refs()) ?? refs
+        worktrees = (try? await service.worktrees()) ?? worktrees
+        stashes = (try? await service.stashes()) ?? stashes
+        remotes = (try? await service.remotes()) ?? remotes
+        reflog = (try? await service.reflog(limit: 200)) ?? reflog
+        if let page = try? await service.log(skip: 0, limit: 150) {
+            commits = page.commits
+            nextSkip = page.nextSkip
+        }
+        if let path = selectedPath, status?.files.contains(where: { $0.path == path }) == true {
+            await loadDiff(path: path, staged: selectedStaged)
+        } else {
+            selectedPath = nil
+            currentDiff = nil
+        }
     }
 }

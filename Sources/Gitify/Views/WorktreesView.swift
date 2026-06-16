@@ -24,8 +24,42 @@ struct WorktreesView: View {
                 }
             }
             .padding(.vertical, 2)
+            .contextMenu {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: worktree.path)])
+                }
+                if !worktree.isMain {
+                    Button("Remove…", role: .destructive) {
+                        if Prompt.confirmDestructive(
+                            title: "Remove Worktree?",
+                            message: "Removes the worktree at \(worktree.path).", confirm: "Remove") {
+                            Task { await viewModel.removeWorktree(worktree) }
+                        }
+                    }
+                }
+            }
         }
         .listStyle(.inset)
+        .safeAreaInset(edge: .top) {
+            HStack {
+                Button { addWorktree() } label: {
+                    Label("Add Worktree", systemImage: "plus.square.on.square")
+                }
+                Spacer()
+            }
+            .padding(8)
+            .background(.bar)
+        }
+    }
+
+    private func addWorktree() {
+        guard let parent = Prompt.chooseDirectory(prompt: "Choose Location",
+                                                  message: "Pick a parent folder for the new worktree") else { return }
+        guard let branch = Prompt.text(title: "New Worktree",
+                                       message: "Create a worktree checking out a new branch.",
+                                       defaultValue: "worktree-branch", confirm: "Create") else { return }
+        let path = parent.appendingPathComponent(branch).path
+        Task { await viewModel.addWorktree(path: path, branch: branch, create: true) }
     }
 }
 

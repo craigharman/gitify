@@ -34,9 +34,12 @@ public struct DiffHunk: Identifiable, Hashable, Sendable {
     public let newStart: Int
     public let newCount: Int
     public let lines: [DiffLine]
+    /// The exact raw text of this hunk (its `@@` line through its last line), used to
+    /// build a patch for hunk-level staging.
+    public let rawText: String
 
     public init(id: Int, header: String, oldStart: Int, oldCount: Int,
-                newStart: Int, newCount: Int, lines: [DiffLine]) {
+                newStart: Int, newCount: Int, lines: [DiffLine], rawText: String = "") {
         self.id = id
         self.header = header
         self.oldStart = oldStart
@@ -44,6 +47,7 @@ public struct DiffHunk: Identifiable, Hashable, Sendable {
         self.newStart = newStart
         self.newCount = newCount
         self.lines = lines
+        self.rawText = rawText
     }
 }
 
@@ -55,19 +59,23 @@ public struct FileDiff: Sendable {
     public let isNew: Bool
     public let isDeleted: Bool
     public let hunks: [DiffHunk]
+    /// The raw header lines (`diff --git`, `index`, `---`, `+++`) preceding the first hunk,
+    /// used to assemble a valid patch for hunk-level staging.
+    public let header: String
 
     public var isEmpty: Bool { hunks.isEmpty && !isBinary }
     public var addedLines: Int { hunks.reduce(0) { $0 + $1.lines.filter { $0.kind == .addition }.count } }
     public var removedLines: Int { hunks.reduce(0) { $0 + $1.lines.filter { $0.kind == .deletion }.count } }
 
     public init(path: String, oldPath: String?, isBinary: Bool, isNew: Bool,
-                isDeleted: Bool, hunks: [DiffHunk]) {
+                isDeleted: Bool, hunks: [DiffHunk], header: String = "") {
         self.path = path
         self.oldPath = oldPath
         self.isBinary = isBinary
         self.isNew = isNew
         self.isDeleted = isDeleted
         self.hunks = hunks
+        self.header = header
     }
 
     public static func empty(path: String) -> FileDiff {

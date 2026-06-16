@@ -55,6 +55,10 @@ public protocol GitService: Sendable {
     /// files and reverts tracked ones.
     func discard(paths: [String]) async throws
 
+    /// Stages (reverse == false) or unstages (reverse == true) a single hunk by applying
+    /// `fileHeader` + `hunkText` as a patch to the index.
+    func applyHunk(fileHeader: String, hunkText: String, reverse: Bool) async throws
+
     /// Creates a commit with `message`. When `amend` is true, rewrites the last commit.
     func commit(message: String, amend: Bool) async throws
 

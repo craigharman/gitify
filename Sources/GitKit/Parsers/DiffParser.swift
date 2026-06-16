@@ -12,24 +12,46 @@ enum DiffParser {
 
         // State for the hunk currently being accumulated.
         var hunkLines: [DiffLine] = []
+        var hunkRawLines: [String] = []
         var hunkHeader: String?
         var hOldStart = 0, hOldCount = 0, hNewStart = 0, hNewCount = 0
         var oldNo = 0, newNo = 0
+
+        // Header lines (before the first hunk) preserved verbatim for patch assembly.
+        var headerLines: [String] = []
 
         func flushHunk() {
             guard let header = hunkHeader else { return }
             hunks.append(DiffHunk(id: hunks.count, header: header,
                                   oldStart: hOldStart, oldCount: hOldCount,
                                   newStart: hNewStart, newCount: hNewCount,
-                                  lines: hunkLines))
+                                  lines: hunkLines,
+                                  rawText: hunkRawLines.joined(separator: "\n")))
             hunkLines = []
+            hunkRawLines = []
             hunkHeader = nil
         }
 
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
-            if rawLine.hasPrefix("diff --git") {
+            if rawLine.hasPrefix("@@") {
+                flushHunk()
+                let parsed = parseHunkHeader(rawLine)
+                hOldStart = parsed.oldStart; hOldCount = parsed.oldCount
+                hNewStart = parsed.newStart; hNewCount = parsed.newCount
+                oldNo = parsed.oldStart; newNo = parsed.newStart
+                hunkHeader = rawLine
+                hunkRawLines = [rawLine]
                 continue
-            } else if rawLine.hasPrefix("new file") {
+            }
+
+            // Lines before the first hunk are the verbatim patch header.
+            if hunkHeader == nil {
+                headerLines.append(rawLine)
+            } else {
+                hunkRawLines.append(rawLine)
+            }
+
+            if rawLine.hasPrefix("new file") {
                 isNew = true
             } else if rawLine.hasPrefix("deleted file") {
                 isDeleted = true
@@ -43,13 +65,6 @@ enum DiffParser {
             } else if rawLine.hasPrefix("+++ ") {
                 let p = String(rawLine.dropFirst(4))
                 if p != "/dev/null" { path = stripPrefix(p) }
-            } else if rawLine.hasPrefix("@@") {
-                flushHunk()
-                let parsed = parseHunkHeader(rawLine)
-                hOldStart = parsed.oldStart; hOldCount = parsed.oldCount
-                hNewStart = parsed.newStart; hNewCount = parsed.newCount
-                oldNo = parsed.oldStart; newNo = parsed.newStart
-                hunkHeader = rawLine
             } else if hunkHeader != nil {
                 // Inside a hunk: classify by the leading marker.
                 guard let marker = rawLine.first else {
@@ -83,7 +98,8 @@ enum DiffParser {
         flushHunk()
 
         return FileDiff(path: path, oldPath: oldPath, isBinary: isBinary,
-                        isNew: isNew, isDeleted: isDeleted, hunks: hunks)
+                        isNew: isNew, isDeleted: isDeleted, hunks: hunks,
+                        header: headerLines.joined(separator: "\n"))
     }
 
     /// Strips the `a/` or `b/` prefix git adds to diff paths.

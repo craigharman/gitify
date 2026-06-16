@@ -26,6 +26,7 @@ struct RefListView: View {
                 .listStyle(.inset)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(title)
         .safeAreaInset(edge: .top) {
             if isTags {

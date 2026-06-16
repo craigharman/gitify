@@ -157,6 +157,24 @@ public struct CLIGitService: GitService {
         _ = try? await runner.runRaw(["clean", "-fd", "--"] + paths)
     }
 
+    public func applyHunk(fileHeader: String, hunkText: String, reverse: Bool) async throws {
+        // Assemble a minimal, newline-terminated patch and apply it to the index.
+        var patch = fileHeader
+        if !patch.hasSuffix("\n") { patch += "\n" }
+        patch += hunkText
+        if !patch.hasSuffix("\n") { patch += "\n" }
+
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gitify-\(UUID().uuidString).patch")
+        try patch.write(to: tmp, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        var args = ["apply", "--cached", "--whitespace=nowarn"]
+        if reverse { args.append("--reverse") }
+        args.append(tmp.path)
+        try await runner.run(args)
+    }
+
     public func commit(message: String, amend: Bool) async throws {
         var args = ["commit", "-m", message]
         if amend { args.append("--amend") }
@@ -182,33 +200,46 @@ public struct CLIGitService: GitService {
         return ReflogParser.parse(output)
     }
 
+    /// Rejects user-supplied positional arguments beginning with `-`, which git would
+    /// otherwise treat as options (argv flag smuggling). Returns the value when safe.
+    @discardableResult
+    static func requireSafe(_ value: String, _ label: String) throws -> String {
+        if value.hasPrefix("-") {
+            throw GitError.invalidArgument("\(label) may not begin with '-': \(value)")
+        }
+        return value
+    }
+
     // MARK: - Branches & tags
 
     public func checkout(_ revision: String) async throws {
+        try Self.requireSafe(revision, "revision")
         try await runner.run(["checkout", revision])
     }
 
     public func createBranch(name: String, startPoint: String?, checkout: Bool) async throws {
-        if checkout {
-            var args = ["switch", "-c", name]
-            if let startPoint { args.append(startPoint) }
-            try await runner.run(args)
-        } else {
-            var args = ["branch", name]
-            if let startPoint { args.append(startPoint) }
-            try await runner.run(args)
-        }
+        try Self.requireSafe(name, "branch name")
+        if let startPoint { try Self.requireSafe(startPoint, "start point") }
+        let verb = checkout ? ["switch", "-c"] : ["branch"]
+        var args = verb + [name]
+        if let startPoint { args.append(startPoint) }
+        try await runner.run(args)
     }
 
     public func deleteBranch(name: String, force: Bool) async throws {
-        try await runner.run(["branch", force ? "-D" : "-d", name])
+        try Self.requireSafe(name, "branch name")
+        try await runner.run(["branch", force ? "-D" : "-d", "--", name])
     }
 
     public func renameBranch(from oldName: String, to newName: String) async throws {
-        try await runner.run(["branch", "-m", oldName, newName])
+        try Self.requireSafe(oldName, "branch name")
+        try Self.requireSafe(newName, "branch name")
+        try await runner.run(["branch", "-m", "--", oldName, newName])
     }
 
     public func createTag(name: String, target: String?, message: String?) async throws {
+        try Self.requireSafe(name, "tag name")
+        if let target { try Self.requireSafe(target, "tag target") }
         var args = ["tag"]
         if let message { args.append(contentsOf: ["-a", "-m", message]) }
         args.append(name)
@@ -217,7 +248,8 @@ public struct CLIGitService: GitService {
     }
 
     public func deleteTag(name: String) async throws {
-        try await runner.run(["tag", "-d", name])
+        try Self.requireSafe(name, "tag name")
+        try await runner.run(["tag", "-d", "--", name])
     }
 
     // MARK: - Stashes
@@ -230,28 +262,34 @@ public struct CLIGitService: GitService {
     }
 
     public func stashApply(_ selector: String) async throws {
+        try Self.requireSafe(selector, "stash")
         try await runner.run(["stash", "apply", selector])
     }
 
     public func stashPop(_ selector: String) async throws {
+        try Self.requireSafe(selector, "stash")
         try await runner.run(["stash", "pop", selector])
     }
 
     public func stashDrop(_ selector: String) async throws {
+        try Self.requireSafe(selector, "stash")
         try await runner.run(["stash", "drop", selector])
     }
 
     // MARK: - Worktrees
 
     public func addWorktree(path: String, branch: String?, createBranch: Bool) async throws {
+        try Self.requireSafe(path, "worktree path")
+        if let branch { try Self.requireSafe(branch, "branch name") }
         var args = ["worktree", "add"]
         if createBranch, let branch { args.append(contentsOf: ["-b", branch]) }
-        args.append(path)
+        args.append(contentsOf: ["--", path])
         if !createBranch, let branch { args.append(branch) }
         try await runner.run(args)
     }
 
     public func removeWorktree(path: String, force: Bool) async throws {
+        try Self.requireSafe(path, "worktree path")
         var args = ["worktree", "remove"]
         if force { args.append("--force") }
         args.append(path)
@@ -266,7 +304,7 @@ public struct CLIGitService: GitService {
 
     public func fetch(remote: String?, onProgress: (@Sendable (String) -> Void)?) async throws {
         var args = ["fetch", "--progress", "--prune"]
-        if let remote { args.append(remote) } else { args.append("--all") }
+        if let remote { args.append(try Self.requireSafe(remote, "remote")) } else { args.append("--all") }
         try await runner.runStreaming(args, onProgress: onProgress)
     }
 
@@ -278,8 +316,8 @@ public struct CLIGitService: GitService {
                      onProgress: (@Sendable (String) -> Void)?) async throws {
         var args = ["push", "--progress"]
         if setUpstream { args.append("--set-upstream") }
-        if let remote { args.append(remote) }
-        if let branch { args.append(branch) }
+        if let remote { args.append(try Self.requireSafe(remote, "remote")) }
+        if let branch { args.append(try Self.requireSafe(branch, "branch")) }
         try await runner.runStreaming(args, onProgress: onProgress)
     }
 
@@ -292,10 +330,14 @@ public struct CLIGitService: GitService {
         executablePath: String? = nil,
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> URL {
+        // Reject flag-smuggling URLs/folders; `--` stops option parsing of the positionals.
+        // `ext::`/`fd::` command-exec protocols are already blocked via GIT_ALLOW_PROTOCOL.
+        try requireSafe(url, "clone URL")
         let folder = name ?? defaultCloneFolderName(for: url)
+        try requireSafe(folder, "destination folder")
         let destination = parent.appendingPathComponent(folder)
         let runner = GitRunner(workingDirectory: parent, executablePath: executablePath)
-        try await runner.runStreaming(["clone", "--progress", url, folder], onProgress: onProgress)
+        try await runner.runStreaming(["clone", "--progress", "--", url, folder], onProgress: onProgress)
         return destination
     }
 

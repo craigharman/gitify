@@ -44,6 +44,9 @@ public actor GitRunner {
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_OPTIONAL_LOCKS"] = "0"
         env["LC_ALL"] = "C"
+        // Restrict transports to well-known ones, blocking command-executing pseudo-protocols
+        // like `ext::` / `fd::` that a malicious clone/remote URL could otherwise smuggle.
+        env["GIT_ALLOW_PROTOCOL"] = "https:http:ssh:git:file"
         return env
     }()
 

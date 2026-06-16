@@ -35,10 +35,14 @@ final class RepositoryViewModel {
 
     private var service: CLIGitService?
     private var nextSkip: Int? = 0
+    private var watcher: RepositoryWatcher?
+    private var autoRefreshTask: Task<Void, Never>?
 
     init(ref: RepositoryRef) {
         self.ref = ref
     }
+    // Cleanup is automatic: releasing `watcher` invalidates the FSEvents stream via its
+    // own deinit, and the debounced refresh task holds only a weak self.
 
     var localBranches: [Ref] { refs.filter { $0.kind == .localBranch } }
     var remoteBranches: [Ref] { refs.filter { $0.kind == .remoteBranch } }
@@ -109,6 +113,14 @@ final class RepositoryViewModel {
     private func loadDiff(path: String, staged: Bool) async {
         guard let service else { return }
         currentDiff = (try? await service.diff(path: path, staged: staged)) ?? .empty(path: path)
+    }
+
+    /// Stages or unstages a single hunk of the currently-displayed diff. The direction is
+    /// inferred from whether the selected file is shown from the staged or unstaged side.
+    func applyHunk(_ hunk: DiffHunk) async {
+        guard let diff = currentDiff else { return }
+        await mutate { try await $0.applyHunk(fileHeader: diff.header, hunkText: hunk.rawText,
+                                              reverse: self.selectedStaged) }
     }
 
     func stage(_ file: FileStatus) async { await mutate { try await $0.stage(paths: [file.path]) } }
@@ -182,7 +194,32 @@ final class RepositoryViewModel {
         if let service { return service }
         let service = try await CLIGitService(directory: ref.url)
         self.service = service
+        startWatching(root: service.root)
         return service
+    }
+
+    // MARK: - Filesystem auto-refresh
+
+    /// Begins watching the repository so external changes (editor saves, terminal git
+    /// commands) refresh the UI automatically.
+    private func startWatching(root: URL) {
+        guard watcher == nil else { return }
+        let watcher = RepositoryWatcher(root: root) { [weak self] in
+            Task { @MainActor in self?.scheduleAutoRefresh() }
+        }
+        watcher.start()
+        self.watcher = watcher
+    }
+
+    /// Debounces filesystem events into a single reload, skipping while a load or network
+    /// operation is already in flight.
+    private func scheduleAutoRefresh() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self, !self.isLoading, !self.isBusy else { return }
+            await self.reloadEverything()
+        }
     }
 
     // MARK: - Branch / tag / stash / worktree actions

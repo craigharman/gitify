@@ -25,6 +25,72 @@ enum Checks {
         await test("worktree add and remove", worktreeOps)
         await test("reflog lists recent HEAD movements", reflogOps)
         await test("remotes/push/fetch/clone round-trip", remoteOps)
+        await test("flag-smuggling arguments are rejected", argumentInjection)
+        await test("hunk staging stages one hunk at a time", hunkStaging)
+    }
+
+    static func hunkStaging() async throws {
+        let repo = try await TestRepository()
+        // Ten lines so two edits land in separate, non-adjacent hunks.
+        try await repo.commit("initial", file: "f.txt",
+                              contents: (1...10).map { "line \($0)" }.joined(separator: "\n") + "\n")
+        var lines = (1...10).map { "line \($0)" }
+        lines[0] = "LINE ONE changed"   // top hunk
+        lines[9] = "LINE TEN changed"   // bottom hunk
+        try repo.write("f.txt", lines.joined(separator: "\n") + "\n")
+        let service = try await repo.service()
+
+        let diff = try await service.diff(path: "f.txt", staged: false)
+        await expectEqual(diff.hunks.count, 2, "two separate hunks")
+        await expect(!diff.header.isEmpty, "header captured")
+        await expect(!(diff.hunks.first?.rawText.isEmpty ?? true), "hunk raw text captured")
+
+        // Stage only the first hunk.
+        let first = try await require(diff.hunks.first)
+        try await service.applyHunk(fileHeader: diff.header, hunkText: first.rawText, reverse: false)
+
+        let staged = try await service.diff(path: "f.txt", staged: true)
+        await expectEqual(staged.hunks.count, 1, "exactly one hunk staged")
+        await expect(staged.hunks.first?.lines.contains { $0.content.contains("LINE ONE") } ?? false,
+                     "the first hunk was the one staged")
+
+        let unstaged = try await service.diff(path: "f.txt", staged: false)
+        await expect(unstaged.hunks.first?.lines.contains { $0.content.contains("LINE TEN") } ?? false,
+                     "the second hunk remains unstaged")
+
+        // Now unstage it again (reverse) and confirm the index is clean.
+        let stagedFirst = try await require(staged.hunks.first)
+        try await service.applyHunk(fileHeader: staged.header, hunkText: stagedFirst.rawText, reverse: true)
+        await expect(try await service.status().stagedFiles.isEmpty, "index clean after unstaging the hunk")
+    }
+
+    static func argumentInjection() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial")
+        let service = try await repo.service()
+
+        await expectThrows("checkout rejects leading-dash revision") {
+            try await service.checkout("--upload-pack=touch /tmp/pwned")
+        }
+        await expectThrows("createBranch rejects leading-dash name") {
+            try await service.createBranch(name: "--bad", startPoint: nil, checkout: true)
+        }
+        await expectThrows("deleteTag rejects leading-dash name") {
+            try await service.deleteTag(name: "--bad")
+        }
+        await expectThrows("fetch rejects leading-dash remote") {
+            try await service.fetch(remote: "--config=core.fsmonitor=true", onProgress: nil)
+        }
+
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+        await expectThrows("clone rejects flag-smuggling URL") {
+            _ = try await CLIGitService.clone(url: "--upload-pack=touch /tmp/pwned", into: parent, onProgress: nil)
+        }
+        await expectThrows("clone rejects ext:: command-exec protocol") {
+            _ = try await CLIGitService.clone(url: "ext::sh -c touch% /tmp/pwned", into: parent, onProgress: nil)
+        }
     }
 
     /// Builds a bare `Commit` for graph-layout tests (only id/parents matter).

@@ -10,6 +10,8 @@ public enum GitError: Error, Sendable, Equatable {
     case parseFailure(String)
     /// The requested path is not inside a git working tree.
     case notARepository(String)
+    /// A user-supplied argument was rejected because it could be smuggled as a git option.
+    case invalidArgument(String)
 }
 
 extension GitError: CustomStringConvertible {
@@ -24,6 +26,8 @@ extension GitError: CustomStringConvertible {
             return "Failed to parse git output: \(message)"
         case let .notARepository(path):
             return "Not a git repository: \(path)"
+        case let .invalidArgument(message):
+            return "Invalid argument: \(message)"
         }
     }
 }

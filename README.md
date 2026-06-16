@@ -40,15 +40,19 @@ open build/Gitify.app
 Implemented:
 - Git engine: status (porcelain v2), history (paged log), refs (branches/tags + tracking),
   worktrees, stashes, unified diffs, mutations (stage/unstage/discard, commit, amend),
-  lane-assignment graph layout, branch/tag/stash/worktree management, reflog, remotes, and
-  streamed network ops (fetch/pull/push/clone) — with a 79-check integration suite.
-- App: repository manager (add/remove/persist + **clone-from-URL** with progress), overview,
-  a full working-tree/staging view (stage/unstage/discard, unified diff, commit + amend), a
-  **lane-based commit graph** with ref pills and a metadata inspector, **fetch/pull/push**
-  from the toolbar with a live-progress overlay, branch checkout/create/rename/delete,
-  tag create/delete, stash push/apply/pop/drop, worktree add/remove, and a reflog view.
+  hunk-level staging, lane-assignment graph layout, branch/tag/stash/worktree management,
+  reflog, remotes, and streamed network ops (fetch/pull/push/clone). Argument-injection
+  hardened (`--` separators, leading-dash rejection, restricted `GIT_ALLOW_PROTOCOL`).
+  Covered by a 92-check integration suite.
+- App: repository manager with a sidebar repo-switcher (add / **clone-from-URL** with
+  progress), overview, a full working-tree/staging view (stage/unstage/discard, **per-hunk
+  staging**, unified diff, commit + amend), a **lane-based commit graph** with ref pills and
+  inspector, **fetch/pull/push** with a live-progress overlay, branch checkout/create/rename/
+  delete, tag create/delete, stash push/apply/pop/drop, worktree add/remove, reflog view,
+  **FSEvents auto-refresh**, and a **Check for Updates** menu.
+- Packaging: `scripts/package.sh` builds a (optionally signed + notarized) `.dmg`. See
+  `docs/RELEASING.md`.
 
-Planned (see `plans/`):
-- Hunk- and line-level staging
-- FSEvents auto-refresh, Sparkle auto-update, Developer-ID notarization
-- Layout/design polish pass
+Planned:
+- Line-level (intra-hunk) staging
+- Sparkle integration for silent signed auto-updates (see `docs/RELEASING.md`)

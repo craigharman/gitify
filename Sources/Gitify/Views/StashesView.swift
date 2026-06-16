@@ -40,6 +40,7 @@ struct StashesView: View {
                 .listStyle(.inset)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .safeAreaInset(edge: .top) {
             HStack {
                 Button {

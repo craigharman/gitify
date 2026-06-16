@@ -1,15 +1,12 @@
 import SwiftUI
 
-/// Top-level three-column layout: repository list, repository workspace.
+/// Top-level container: the workspace for the selected repository (which owns its own
+/// sidebar + detail split), or an empty state when no repository is open.
 struct RootView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        @Bindable var model = model
-        NavigationSplitView {
-            RepositoryListView()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
-        } detail: {
+        Group {
             if let ref = model.selectedRepository {
                 // Recreate the workspace when the selected repository changes.
                 RepositoryWorkspaceView(ref: ref)
@@ -18,13 +15,16 @@ struct RootView: View {
                 ContentUnavailableView {
                     Label("No Repository", systemImage: "folder.badge.gearshape")
                 } description: {
-                    Text("Add a Git repository to get started.")
+                    Text("Add or clone a Git repository to get started.")
                 } actions: {
-                    Button("Add Repository…") {
-                        Task { await model.promptToAddRepository() }
-                    }
+                    Button("Add Repository…") { Task { await model.promptToAddRepository() } }
+                    Button("Clone Repository…") { Task { await model.promptToClone() } }
                 }
             }
+        }
+        .task {
+            // Quiet check on launch; surfaces a prompt only if a newer version exists.
+            await UpdateChecker.checkForUpdates(userInitiated: false)
         }
         .overlay {
             if model.isCloning {

@@ -15,11 +15,12 @@ struct WorkingTreeView: View {
                         Divider()
                         CommitBox(viewModel: viewModel)
                     }
-                    .frame(minWidth: 300, idealWidth: 360)
+                    .frame(minWidth: 300, idealWidth: 360, maxHeight: .infinity)
 
                     diffPane
-                        .frame(minWidth: 360)
+                        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ContentUnavailableView("Clean Working Tree",
                                        systemImage: "checkmark.seal",
@@ -60,7 +61,9 @@ struct WorkingTreeView: View {
     @ViewBuilder
     private var diffPane: some View {
         if let diff = viewModel.currentDiff {
-            DiffView(diff: diff)
+            DiffView(diff: diff,
+                     actionLabel: viewModel.selectedStaged ? "Unstage Hunk" : "Stage Hunk",
+                     onApplyHunk: { hunk in Task { await viewModel.applyHunk(hunk) } })
         } else {
             ContentUnavailableView("No File Selected", systemImage: "doc.text.magnifyingglass",
                                    description: Text("Select a file to view its changes."))

@@ -10,15 +10,17 @@ struct HistoryView: View {
     var body: some View {
         HSplitView {
             CommitGraphList(viewModel: viewModel, selection: $selection)
-                .frame(minWidth: 380)
-            if let selected = viewModel.commits.first(where: { $0.id == selection }) {
-                CommitInspector(commit: selected)
-                    .frame(minWidth: 280)
-            } else {
-                ContentUnavailableView("No Commit Selected", systemImage: "sidebar.right")
-                    .frame(minWidth: 280)
+                .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
+            Group {
+                if let selected = viewModel.commits.first(where: { $0.id == selection }) {
+                    CommitInspector(commit: selected)
+                } else {
+                    ContentUnavailableView("No Commit Selected", systemImage: "sidebar.right")
+                }
             }
+            .frame(minWidth: 280, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

@@ -13,6 +13,11 @@ struct GitifyApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    Task { await UpdateChecker.checkForUpdates(userInitiated: true) }
+                }
+            }
             CommandGroup(after: .newItem) {
                 Button("Add Repository…") {
                     Task { await model.promptToAddRepository() }

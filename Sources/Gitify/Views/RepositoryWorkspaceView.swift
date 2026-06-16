@@ -26,14 +26,17 @@ struct RepositoryWorkspaceView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        NavigationSplitView {
             WorkspaceRail(viewModel: viewModel, section: $section)
-                .frame(width: 220)
-            Divider()
+                .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
+        } detail: {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        // Native title + subtitle render in the unified title bar and truncate gracefully,
+        // so a long repo name never overflows the sidebar.
         .navigationTitle(ref.name)
+        .navigationSubtitle(sectionTitle)
         .toolbar {
             ToolbarItemGroup {
                 Button { Task { await viewModel.fetch() } } label: {
@@ -83,6 +86,21 @@ struct RepositoryWorkspaceView: View {
         Task { await viewModel.createBranch(name: name, checkout: true) }
     }
 
+    /// Subtitle shown under the repo name, reflecting the active section.
+    private var sectionTitle: String {
+        switch section {
+        case .overview: "Overview"
+        case .changes: "Working Tree"
+        case .history: "History"
+        case .branch(let name): name
+        case .remotes: "Remote Branches"
+        case .tags: "Tags"
+        case .stashes: "Stashes"
+        case .worktrees: "Worktrees"
+        case .reflog: "Reflog"
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         switch section {
@@ -103,6 +121,57 @@ struct RepositoryWorkspaceView: View {
         case .reflog:
             ReflogView(viewModel: viewModel)
         }
+    }
+}
+
+/// The repo identity header at the top of the sidebar, doubling as a switcher menu.
+private struct RepoSwitcher: View {
+    let model: AppModel
+    let current: RepositoryRef
+
+    var body: some View {
+        Menu {
+            ForEach(model.repositories) { repo in
+                Button {
+                    model.selectedRepositoryID = repo.id
+                } label: {
+                    if repo.id == current.id {
+                        Label(repo.name, systemImage: "checkmark")
+                    } else {
+                        Text(repo.name)
+                    }
+                }
+            }
+            Divider()
+            Button("Add Existing Repository…") { Task { await model.promptToAddRepository() } }
+            Button("Clone Repository…") { Task { await model.promptToClone() } }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(current.name)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text("^[\(model.repositories.count) repository](inflect: true)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -129,8 +198,9 @@ private struct OperationOverlay: View {
     }
 }
 
-/// The inner navigation rail listing sections and ref groups.
+/// The navigation rail: a repo switcher header, section list, and current-branch footer.
 private struct WorkspaceRail: View {
+    @Environment(AppModel.self) private var model
     let viewModel: RepositoryViewModel
     @Binding var section: WorkspaceSection
 
@@ -198,18 +268,26 @@ private struct WorkspaceRail: View {
             }
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .top, spacing: 0) {
+            RepoSwitcher(model: model, current: viewModel.ref)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if let branch = viewModel.currentBranch {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.triangle.branch")
-                    Text(branch.name).fontWeight(.medium)
-                    if let ahead = branch.ahead, let behind = branch.behind, ahead + behind > 0 {
-                        Text("↑\(ahead) ↓\(behind)").foregroundStyle(.secondary)
+                VStack(spacing: 0) {
+                    Divider()
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .foregroundStyle(.tint)
+                        Text(branch.name).fontWeight(.medium)
+                        if let ahead = branch.ahead, let behind = branch.behind, ahead + behind > 0 {
+                            Text("↑\(ahead) ↓\(behind)").foregroundStyle(.secondary)
+                        }
+                        Spacer()
                     }
-                    Spacer()
+                    .font(.caption)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
                 }
-                .font(.caption)
-                .padding(8)
                 .background(.bar)
             }
         }

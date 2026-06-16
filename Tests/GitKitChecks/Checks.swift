@@ -17,6 +17,45 @@ enum Checks {
         await test("stage/unstage move files between index and worktree", stageUnstage)
         await test("commit creates history; amend rewrites it", commitAndAmend)
         await test("discard reverts tracked and removes untracked", discard)
+        await test("graph layout keeps linear history in one lane", graphLinear)
+        await test("graph layout diverges and merges a branch", graphBranchMerge)
+    }
+
+    /// Builds a bare `Commit` for graph-layout tests (only id/parents matter).
+    private static func node(_ id: String, _ parents: [String] = []) -> Commit {
+        Commit(id: id, parents: parents, authorName: "", authorEmail: "",
+               authorDate: .distantPast, committerName: "", committerEmail: "",
+               commitDate: .distantPast, summary: "", body: "", refs: [])
+    }
+
+    static func graphLinear() async throws {
+        let commits = [node("C", ["B"]), node("B", ["A"]), node("A", [])]
+        let graph = GraphLayout.layout(commits)
+        await expectEqual(graph.width, 1, "single lane")
+        await expect(graph.nodes.allSatisfy { $0.lane == 0 }, "all nodes in lane 0")
+        await expectEqual(graph.nodes[0].outgoing, [0], "C routes to B in lane 0")
+        await expectEqual(graph.nodes[2].outgoing, [], "root has no outgoing")
+    }
+
+    static func graphBranchMerge() async throws {
+        // M is a merge of B and C, both children of A.
+        let commits = [node("M", ["B", "C"]), node("B", ["A"]), node("C", ["A"]), node("A", [])]
+        let graph = GraphLayout.layout(commits)
+        await expectEqual(graph.width, 2, "two lanes at peak")
+
+        let m = graph.nodes[0]
+        await expectEqual(m.lane, 0, "merge sits in lane 0")
+        await expectEqual(m.outgoing.count, 2, "merge has two outgoing edges")
+
+        let c = graph.nodes[2]
+        await expectEqual(c.lane, 1, "C took the second lane")
+
+        let b = graph.nodes[1]
+        await expect(b.passThrough.contains(1), "C's lane passes through B's row")
+
+        let a = graph.nodes[3]
+        await expectEqual(a.lane, 0, "branches converge back to lane 0 at A")
+        await expectEqual(a.outgoing, [], "A is the root")
     }
 
     static func repositoryRoot() async throws {

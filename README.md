@@ -39,15 +39,14 @@ open build/Gitify.app
 
 Implemented:
 - Git engine: status (porcelain v2), history (paged log), refs (branches/tags + tracking),
-  worktrees, stashes, unified diffs, and mutations (stage/unstage/discard, commit, amend)
-  — with a 49-check integration suite.
-- App: repository manager (add/remove/persist), repository overview, commit history +
-  inspector, branch/remote/tag/stash/worktree browsing, and a full working-tree/staging
-  view: staged/unstaged file lists, per-file stage/unstage/discard, a unified diff pane,
-  and a commit box with amend support.
+  worktrees, stashes, unified diffs, mutations (stage/unstage/discard, commit, amend), and a
+  lane-assignment graph layout — with a 60-check integration suite.
+- App: repository manager (add/remove/persist), repository overview, a full working-tree/
+  staging view (staged/unstaged lists, per-file stage/unstage/discard, unified diff pane,
+  commit box with amend), a **lane-based commit graph** with colored lanes/merge curves +
+  ref pills and a metadata inspector, and branch/remote/tag/stash/worktree browsing.
 
 Planned (see `plans/`):
 - Hunk- and line-level staging
-- Lane-based commit graph canvas
 - Clone-from-URL, fetch/pull/push with progress
 - FSEvents auto-refresh, Sparkle auto-update, Developer-ID notarization

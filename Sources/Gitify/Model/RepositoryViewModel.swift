@@ -10,7 +10,8 @@ final class RepositoryViewModel {
 
     private(set) var status: WorkingTreeStatus?
     private(set) var refs: [Ref] = []
-    private(set) var commits: [Commit] = []
+    private(set) var commits: [Commit] = [] { didSet { graph = GraphLayout.layout(commits) } }
+    private(set) var graph: CommitGraph = .empty
     private(set) var worktrees: [Worktree] = []
     private(set) var stashes: [Stash] = []
 

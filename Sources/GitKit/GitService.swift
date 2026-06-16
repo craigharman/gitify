@@ -33,6 +33,33 @@ public protocol GitService: Sendable {
 
     /// The stash stack, newest first.
     func stashes() async throws -> [Stash]
+
+    // MARK: Diffs
+
+    /// The diff for a single path. `staged` selects the index-vs-HEAD diff; otherwise the
+    /// working-tree-vs-index diff. Untracked files are rendered as all-additions.
+    func diff(path: String, staged: Bool) async throws -> FileDiff
+
+    // MARK: Mutations
+
+    /// Stages the given paths (`git add`).
+    func stage(paths: [String]) async throws
+
+    /// Stages every change in the working tree (`git add -A`).
+    func stageAll() async throws
+
+    /// Unstages the given paths (`git restore --staged`).
+    func unstage(paths: [String]) async throws
+
+    /// Discards working-tree changes for the given paths. Destructive — deletes untracked
+    /// files and reverts tracked ones.
+    func discard(paths: [String]) async throws
+
+    /// Creates a commit with `message`. When `amend` is true, rewrites the last commit.
+    func commit(message: String, amend: Bool) async throws
+
+    /// The message of the most recent commit (for pre-filling an amend).
+    func lastCommitMessage() async throws -> String
 }
 
 public extension GitService {

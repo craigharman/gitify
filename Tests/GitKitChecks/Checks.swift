@@ -12,6 +12,11 @@ enum Checks {
         await test("refs lists branches and tags with HEAD/upstream", refs)
         await test("worktrees include main and linked", worktrees)
         await test("stashes listed newest-first with branch", stashes)
+        await test("diff reports hunks and line counts", diff)
+        await test("diff renders untracked file as additions", untrackedDiff)
+        await test("stage/unstage move files between index and worktree", stageUnstage)
+        await test("commit creates history; amend rewrites it", commitAndAmend)
+        await test("discard reverts tracked and removes untracked", discard)
     }
 
     static func repositoryRoot() async throws {
@@ -141,5 +146,84 @@ enum Checks {
         await expectEqual(stashes[0].branch, "main", "branch captured")
         await expect(stashes[0].message.contains("second stash"), "newest message")
         await expect(stashes[1].message.contains("first stash"), "oldest message")
+    }
+
+    static func diff() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "a\nb\nc\n")
+        try repo.write("f.txt", "a\nB\nc\nd\n")
+
+        let fileDiff = try await repo.service().diff(path: "f.txt", staged: false)
+        await expect(!fileDiff.hunks.isEmpty, "has a hunk")
+        await expectEqual(fileDiff.addedLines, 2, "two additions (B and d)")
+        await expectEqual(fileDiff.removedLines, 1, "one deletion (b)")
+        // A context line should carry both line numbers; an addition only the new one.
+        let firstHunk = try await require(fileDiff.hunks.first)
+        await expect(firstHunk.lines.contains { $0.kind == .context && $0.oldLineNumber != nil },
+                     "context lines numbered")
+        await expect(firstHunk.lines.contains { $0.kind == .addition && $0.oldLineNumber == nil },
+                     "additions lack old number")
+    }
+
+    static func untrackedDiff() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial")
+        try repo.write("brand-new.txt", "line1\nline2\n")
+
+        let fileDiff = try await repo.service().diff(path: "brand-new.txt", staged: false)
+        await expect(fileDiff.isNew, "marked as new file")
+        await expectEqual(fileDiff.addedLines, 2, "both lines added")
+    }
+
+    static func stageUnstage() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "v1\n")
+        try repo.write("f.txt", "v2\n")
+        let service = try await repo.service()
+
+        try await service.stage(paths: ["f.txt"])
+        var status = try await service.status()
+        await expect(status.stagedFiles.contains { $0.path == "f.txt" }, "staged after add")
+
+        try await service.unstage(paths: ["f.txt"])
+        status = try await service.status()
+        await expect(status.unstagedFiles.contains { $0.path == "f.txt" }, "unstaged after restore")
+        await expect(status.stagedFiles.isEmpty, "nothing staged")
+    }
+
+    static func commitAndAmend() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial")
+        let service = try await repo.service()
+
+        try repo.write("note.txt", "hello\n")
+        try await service.stage(paths: ["note.txt"])
+        try await service.commit(message: "add note", amend: false)
+
+        var page = try await service.log(limit: 5, revisions: ["HEAD"])
+        await expectEqual(page.commits.first?.summary, "add note", "commit recorded")
+        let countAfterCommit = page.commits.count
+
+        try await service.commit(message: "add note (amended)", amend: true)
+        page = try await service.log(limit: 5, revisions: ["HEAD"])
+        await expectEqual(page.commits.first?.summary, "add note (amended)", "amend rewrote message")
+        await expectEqual(page.commits.count, countAfterCommit, "amend didn't add a commit")
+        await expectEqual(try await service.lastCommitMessage(), "add note (amended)", "last message")
+    }
+
+    static func discard() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "tracked.txt", contents: "original\n")
+        try repo.write("tracked.txt", "changed\n")
+        try repo.write("untracked.txt", "temp\n")
+        let service = try await repo.service()
+
+        try await service.discard(paths: ["tracked.txt", "untracked.txt"])
+        let status = try await service.status()
+        await expect(!status.hasChanges, "working tree clean after discard")
+        let restored = try String(contentsOf: repo.url.appendingPathComponent("tracked.txt"), encoding: .utf8)
+        await expectEqual(restored, "original\n", "tracked file reverted")
+        await expect(!FileManager.default.fileExists(atPath: repo.url.appendingPathComponent("untracked.txt").path),
+                     "untracked file removed")
     }
 }

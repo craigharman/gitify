@@ -90,4 +90,82 @@ public struct CLIGitService: GitService {
         let output = try await runner.runString(["stash", "list", "--format=\(format)"])
         return StashParser.parse(output)
     }
+
+    // MARK: - Diffs
+
+    public func diff(path: String, staged: Bool) async throws -> FileDiff {
+        var args = ["diff", "--no-color", "--no-ext-diff", "-U3"]
+        if staged { args.append("--cached") }
+        args.append(contentsOf: ["--", path])
+        let result = try await runner.runRaw(args)
+
+        // A non-empty result means tracked changes; empty likely means an untracked file,
+        // which `git diff` ignores. Fall back to diffing against an empty tree.
+        if result.succeeded, !result.stdoutString.isEmpty {
+            return DiffParser.parse(result.stdoutString, fallbackPath: path)
+        }
+        if !staged {
+            return try await untrackedDiff(path: path)
+        }
+        return FileDiff.empty(path: path)
+    }
+
+    /// Renders an untracked file as additions using `git diff --no-index` against /dev/null.
+    /// That command exits 1 when differences exist, so we tolerate exit codes 0 and 1.
+    private func untrackedDiff(path: String) async throws -> FileDiff {
+        let result = try await runner.runRaw([
+            "diff", "--no-color", "--no-ext-diff", "-U3", "--no-index", "--", "/dev/null", path,
+        ])
+        guard result.exitCode == 0 || result.exitCode == 1 else {
+            throw GitError.commandFailed(command: "diff --no-index", exitCode: result.exitCode,
+                                         stderr: result.stderr)
+        }
+        var diff = DiffParser.parse(result.stdoutString, fallbackPath: path)
+        diff = FileDiff(path: path, oldPath: diff.oldPath, isBinary: diff.isBinary,
+                        isNew: true, isDeleted: false, hunks: diff.hunks)
+        return diff
+    }
+
+    // MARK: - Mutations
+
+    public func stage(paths: [String]) async throws {
+        guard !paths.isEmpty else { return }
+        try await runner.run(["add", "--"] + paths)
+    }
+
+    public func stageAll() async throws {
+        try await runner.run(["add", "-A"])
+    }
+
+    public func unstage(paths: [String]) async throws {
+        guard !paths.isEmpty else { return }
+        // `restore --staged` requires HEAD; fall back to `rm --cached` for an unborn branch.
+        let result = try await runner.runRaw(["restore", "--staged", "--"] + paths)
+        if !result.succeeded {
+            try await runner.run(["reset", "-q", "--"] + paths)
+        }
+    }
+
+    public func discard(paths: [String]) async throws {
+        guard !paths.isEmpty else { return }
+        // `git restore` fails atomically if any pathspec doesn't match a tracked file, so we
+        // revert each path independently: tracked paths get restored, untracked ones error
+        // harmlessly and are then removed by `git clean`.
+        for path in paths {
+            _ = try? await runner.runRaw(["restore", "--worktree", "--", path])
+        }
+        _ = try? await runner.runRaw(["clean", "-fd", "--"] + paths)
+    }
+
+    public func commit(message: String, amend: Bool) async throws {
+        var args = ["commit", "-m", message]
+        if amend { args.append("--amend") }
+        try await runner.run(args)
+    }
+
+    public func lastCommitMessage() async throws -> String {
+        let result = try await runner.runRaw(["log", "-1", "--pretty=%B"])
+        guard result.succeeded else { return "" }
+        return result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }

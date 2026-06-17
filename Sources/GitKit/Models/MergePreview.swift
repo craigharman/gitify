@@ -19,3 +19,10 @@ public enum RepositoryOperation: String, Sendable {
     case merge
     case rebase
 }
+
+/// How `git reset` treats the index and working tree.
+public enum ResetMode: String, Sendable {
+    case soft   // move HEAD only
+    case mixed  // move HEAD + reset index (default)
+    case hard   // move HEAD + reset index + working tree (destructive)
+}

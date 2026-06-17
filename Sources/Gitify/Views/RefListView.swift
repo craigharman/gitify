@@ -47,6 +47,17 @@ struct RefListView: View {
             Button("Checkout as Local Branch") {
                 Task { await viewModel.checkout(ref.name) }
             }
+            Divider()
+            Button("Delete Remote Branch…", role: .destructive) {
+                // ref.name is "<remote>/<branch>"; split into remote + branch.
+                guard let slash = ref.name.firstIndex(of: "/") else { return }
+                let remote = String(ref.name[..<slash])
+                let branch = String(ref.name[ref.name.index(after: slash)...])
+                if Prompt.confirmDestructive(title: "Delete “\(ref.name)” on the remote?",
+                                             message: "This deletes the branch on \(remote).", confirm: "Delete") {
+                    Task { await viewModel.deleteRemoteBranch(remote: remote, branch: branch) }
+                }
+            }
         case .tag:
             Button("Checkout") { Task { await viewModel.checkout(ref.name) } }
             Divider()

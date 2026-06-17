@@ -20,6 +20,7 @@ struct RepositoryWorkspaceView: View {
     @State private var viewModel: RepositoryViewModel
     @State private var section: WorkspaceSection = .changes
     @State private var integrationSheet: IntegrationSheet?
+    @State private var showSettings = false
 
     init(ref: RepositoryRef) {
         self.ref = ref
@@ -43,12 +44,26 @@ struct RepositoryWorkspaceView: View {
                 }
                 .help("Fetch from all remotes").disabled(viewModel.isBusy)
 
-                Button { Task { await viewModel.pull() } } label: {
+                Menu {
+                    Button("Pull") { Task { await viewModel.pull() } }
+                    Button("Pull with Rebase") { Task { await viewModel.pull(rebase: true) } }
+                } label: {
                     Label("Pull", systemImage: "arrow.down.to.line")
                 }
                 .help("Pull current branch").disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
 
-                Button { Task { await viewModel.push() } } label: {
+                Menu {
+                    Button("Push") { Task { await viewModel.push() } }
+                    Button("Force Push (with lease)") {
+                        if Prompt.confirmDestructive(
+                            title: "Force push?",
+                            message: "This overwrites the remote branch (using --force-with-lease).",
+                            confirm: "Force Push") {
+                            Task { await viewModel.push(force: true) }
+                        }
+                    }
+                    Button("Push Tags") { Task { await viewModel.pushTags() } }
+                } label: {
                     Label("Push", systemImage: "arrow.up.to.line")
                 }
                 .help("Push current branch").disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
@@ -67,6 +82,7 @@ struct RepositoryWorkspaceView: View {
             case .rebase(let branch): RebaseSheet(viewModel: viewModel, branch: branch)
             }
         }
+        .sheet(isPresented: $showSettings) { SettingsSheet(viewModel: viewModel) }
         .task { await viewModel.load() }
         .overlay(alignment: .top) {
             VStack(spacing: 0) {
@@ -106,6 +122,7 @@ struct RepositoryWorkspaceView: View {
                 }
             }
             Button("New Branch…") { promptNewBranch() }
+            Button("Repository Settings…") { showSettings = true }
             Divider()
             Button("Merge into Current Branch…") {
                 if let target = others.first?.name { integrationSheet = .merge(target) }
@@ -115,10 +132,33 @@ struct RepositoryWorkspaceView: View {
                 if let target = others.first?.name { integrationSheet = .rebase(target) }
             }
             .disabled(others.isEmpty)
+            Divider()
+            Menu("Remotes") {
+                Button("Add Remote…") { promptAddRemote() }
+                if !viewModel.remotes.isEmpty {
+                    Divider()
+                    ForEach(viewModel.remotes) { remote in
+                        Menu(remote.name) {
+                            Text(remote.fetchURL)
+                            Button("Remove “\(remote.name)”", role: .destructive) {
+                                Task { await viewModel.removeRemote(remote.name) }
+                            }
+                        }
+                    }
+                }
+            }
         } label: {
             Label("Branch", systemImage: "arrow.triangle.branch")
         }
         .help("Branch actions")
+    }
+
+    private func promptAddRemote() {
+        guard let name = Prompt.text(title: "Add Remote", message: "Remote name (e.g. origin).",
+                                     defaultValue: "origin", confirm: "Next") else { return }
+        guard let url = Prompt.text(title: "Remote URL", message: "Git URL for “\(name)”.",
+                                    confirm: "Add Remote") else { return }
+        Task { await viewModel.addRemote(name: name, url: url) }
     }
 
     private func promptNewBranch() {

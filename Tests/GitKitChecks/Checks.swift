@@ -25,10 +25,91 @@ enum Checks {
         await test("worktree add and remove", worktreeOps)
         await test("reflog lists recent HEAD movements", reflogOps)
         await test("remotes/push/fetch/clone round-trip", remoteOps)
+        await test("remote add/remove, push tags, delete remote branch", remoteExtras)
         await test("flag-smuggling arguments are rejected", argumentInjection)
         await test("hunk staging stages one hunk at a time", hunkStaging)
+        await test("commit changes list files, counts, and renames", commitChanges)
         await test("merge preview detects clean vs conflicting", mergePreview)
         await test("merge and rebase update history; abort recovers", mergeRebase)
+        await test("cherry-pick, revert, and reset move/copy commits", commitOps)
+        await test("repository stats: languages, committers, README", repoStats)
+        await test("stash branch, config get/set, conflict resolution", stashConfigConflict)
+    }
+
+    static func stashConfigConflict() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "base\n")
+        let service = try await repo.service()
+
+        // config get/set (local).
+        try await service.setConfigValue("user.name", "Set Name", global: false)
+        await expectEqual(await service.configValue("user.name"), "Set Name", "config round-trips")
+
+        // stash branch: stash a change, then turn it into a branch.
+        try repo.write("f.txt", "stashed\n")
+        try await service.stashPush(message: "wip", includeUntracked: false)
+        try await service.stashBranch(name: "from-stash", selector: "stash@{0}")
+        await expect(try await service.refs().contains { $0.name == "from-stash" && $0.isHead }, "stash became a branch")
+
+        // conflict resolution: create a real conflict, take ours, confirm resolved.
+        let conflict = try await twoBranchRepo(conflicting: true)
+        let cService = try await conflict.service()
+        _ = try? await cService.merge(branch: "feature", squash: false, noFastForward: false,
+                                      noCommit: false, skipHooks: false)
+        let conflicts = try await cService.conflictedFiles()
+        await expect(conflicts.contains("f.txt"), "f.txt is conflicted")
+        try await cService.resolveConflict(path: "f.txt", useOurs: true)
+        await expect(try await cService.conflictedFiles().isEmpty, "conflict resolved after taking ours")
+    }
+
+    static func repoStats() async throws {
+        let repo = try await TestRepository()
+        try repo.write("main.swift", "import Foundation\nprint(\"hi\")\n")
+        try repo.write("script.sh", "#!/bin/sh\necho hi\necho bye\n")
+        try repo.write("README.md", "# Title\n\nHello world.\n")
+        try await repo.git("add", "-A")
+        try await repo.git("commit", "-q", "-m", "initial")
+        let service = try await repo.service()
+
+        let langs = await service.languageStats()
+        await expect(langs.contains { $0.language == "Swift" }, "Swift detected")
+        await expect(langs.contains { $0.language == "Shell" }, "Shell detected")
+
+        let committers = await service.topCommitters(limit: 5)
+        await expectEqual(committers.first?.commits, 1, "one commit by the test user")
+        await expectEqual(committers.first?.name, "Test User", "committer name parsed")
+
+        let readme = await service.readme()
+        await expect(readme?.contains("# Title") == true, "README contents read")
+    }
+
+    static func commitOps() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("base", file: "f.txt", contents: "1\n")
+        // A side branch with a commit to cherry-pick.
+        try await repo.git("checkout", "-q", "-b", "side")
+        try await repo.commit("side change", file: "side.txt", contents: "s\n")
+        let sideSha = try await require((try await repo.service().log(limit: 1, revisions: ["HEAD"])).commits.first?.id)
+        try await repo.git("checkout", "-q", "main")
+        let service = try await repo.service()
+
+        try await service.cherryPick(sha: sideSha)
+        await expect(FileManager.default.fileExists(atPath: repo.url.appendingPathComponent("side.txt").path),
+                     "cherry-pick brought side.txt to main")
+
+        // Revert the cherry-pick.
+        let pickSha = try await require((try await service.log(limit: 1, revisions: ["HEAD"])).commits.first?.id)
+        try await service.revert(sha: pickSha)
+        await expect(!FileManager.default.fileExists(atPath: repo.url.appendingPathComponent("side.txt").path),
+                     "revert removed side.txt")
+        let afterRevert = try await service.log(limit: 10, revisions: ["HEAD"])
+        let revertCount = afterRevert.commits.count
+
+        // Hard reset back two commits (drop the cherry-pick + revert).
+        try await service.reset(to: "HEAD~2", mode: .hard)
+        let afterReset = try await service.log(limit: 10, revisions: ["HEAD"])
+        await expectEqual(afterReset.commits.count, revertCount - 2, "reset dropped two commits")
+        await expect(try await service.status().hasChanges == false, "hard reset left a clean tree")
     }
 
     /// Builds main + feature branches; returns the repo with `feature` ahead of `main`.
@@ -43,6 +124,37 @@ enum Checks {
             try await repo.commit("main edit", file: "f.txt", contents: "a\nMAIN\nc\n")
         }
         return repo
+    }
+
+    static func commitChanges() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "keep.txt", contents: "a\nb\nc\n")
+        try repo.write("old.txt", "x\n"); try await repo.git("add", "old.txt")
+        try await repo.git("commit", "-q", "-m", "add old")
+        try repo.write("keep.txt", "a\nB\nc\nd\n")
+        try await repo.git("mv", "old.txt", "renamed.txt")
+        try repo.write("added.txt", "new\n"); try await repo.git("add", "-A")
+        try await repo.git("commit", "-q", "-m", "second")
+        let service = try await repo.service()
+
+        let head = try await service.log(limit: 1, revisions: ["HEAD"])
+        let sha = try await require(head.commits.first?.id)
+        let changes = try await service.commitChanges(sha: sha)
+
+        let keep = try await require(changes.first { $0.path == "keep.txt" })
+        await expectEqual(keep.status, .modified, "keep.txt modified")
+        await expectEqual(keep.additions, 2, "two additions")
+        await expectEqual(keep.deletions, 1, "one deletion")
+
+        let added = try await require(changes.first { $0.path == "added.txt" })
+        await expectEqual(added.status, .added, "added.txt added")
+
+        let renamed = try await require(changes.first { $0.status == .renamed })
+        await expectEqual(renamed.path, "renamed.txt", "rename new path")
+        await expectEqual(renamed.oldPath, "old.txt", "rename old path")
+
+        let fileDiff = try await service.commitFileDiff(sha: sha, path: "keep.txt")
+        await expect(!fileDiff.hunks.isEmpty, "commit file diff has hunks")
     }
 
     static func mergePreview() async throws {
@@ -126,6 +238,36 @@ enum Checks {
         let stagedFirst = try await require(staged.hunks.first)
         try await service.applyHunk(fileHeader: staged.header, hunkText: stagedFirst.rawText, reverse: true)
         await expect(try await service.status().stagedFiles.isEmpty, "index clean after unstaging the hunk")
+    }
+
+    static func remoteExtras() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "x\n")
+        try await repo.git("tag", "v1.0")
+        let service = try await repo.service()
+
+        let bare = FileManager.default.temporaryDirectory.appendingPathComponent("rx-" + UUID().uuidString + ".git")
+        defer { try? FileManager.default.removeItem(at: bare) }
+        try await GitRunner(workingDirectory: nil).run(["init", "--bare", "-q", bare.path])
+
+        try await service.addRemote(name: "origin", url: bare.path)
+        await expect(try await service.remotes().contains { $0.name == "origin" }, "remote added")
+
+        try await service.push(remote: "origin", branch: "main", setUpstream: true, force: false, onProgress: nil)
+        try await service.pushTags(remote: "origin", onProgress: nil)
+        // The bare repo should now have the tag.
+        let bareTags = try await GitRunner(workingDirectory: bare).runString(["tag", "--list"])
+        await expect(bareTags.contains("v1.0"), "tag pushed to remote")
+
+        // Push a second branch then delete it remotely.
+        try await service.createBranch(name: "temp", startPoint: nil, checkout: false)
+        try await service.push(remote: "origin", branch: "temp", setUpstream: false, force: false, onProgress: nil)
+        try await service.deleteRemoteBranch(remote: "origin", branch: "temp", onProgress: nil)
+        let bareBranches = try await GitRunner(workingDirectory: bare).runString(["branch", "--list"])
+        await expect(!bareBranches.contains("temp"), "remote branch deleted")
+
+        try await service.removeRemote(name: "origin")
+        await expect(try await service.remotes().isEmpty, "remote removed")
     }
 
     static func argumentInjection() async throws {
@@ -492,7 +634,7 @@ enum Checks {
         await expectEqual(remotes.first?.name, "origin", "remote listed")
         await expectEqual(remotes.first?.fetchURL, bare.path, "remote url captured")
 
-        try await service.push(remote: "origin", branch: "main", setUpstream: true, onProgress: nil)
+        try await service.push(remote: "origin", branch: "main", setUpstream: true, force: false, onProgress: nil)
         try await service.fetch(remote: "origin", onProgress: nil) // should not throw
 
         // Clone the bare into a fresh directory and confirm the file arrived.

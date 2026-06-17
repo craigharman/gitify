@@ -38,11 +38,14 @@ open build/Gitify.app
 ## Status
 
 Implemented:
-- Git engine: status (porcelain v2), history (paged log), refs (branches/tags + tracking),
-  worktrees, stashes, unified diffs, mutations (stage/unstage/discard, commit, amend),
-  hunk-level staging, lane-assignment graph layout, branch/tag/stash/worktree management,
-  merge (with conflict preview) / rebase / abort, reflog, remotes, and streamed network ops
-  (fetch/pull/push/clone). Argument-injection
+- Git engine: status (porcelain v2), history (paged log) + per-commit changes/diffs,
+  refs (branches/tags + tracking), worktrees, stashes (+ diffs, branch-from-stash), unified
+  diffs, mutations (stage/unstage/discard, commit, amend), hunk-level staging, lane-assignment
+  graph layout, branch/tag/stash/worktree management, merge (with conflict preview) / rebase /
+  cherry-pick / revert / reset / abort, conflict resolution (ours/theirs/mark-resolved),
+  reflog, remotes (add/remove, push tags, force-push, delete remote branch), config get/set,
+  repository stats (lines-by-language, top committers, README), and streamed network ops
+  (fetch/pull/push/pull-rebase/clone). Argument-injection
   hardened (`--` separators, leading-dash rejection, restricted `GIT_ALLOW_PROTOCOL`).
   Covered by a 92-check integration suite.
 - App: repository manager with a sidebar repo-switcher (add / **clone-from-URL** with

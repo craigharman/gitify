@@ -13,12 +13,13 @@ struct HistoryView: View {
                 .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
             Group {
                 if let selected = viewModel.commits.first(where: { $0.id == selection }) {
-                    CommitInspector(commit: selected)
+                    CommitDetailView(commit: selected, viewModel: viewModel)
+                        .id(selected.id)
                 } else {
                     ContentUnavailableView("No Commit Selected", systemImage: "sidebar.right")
                 }
             }
-            .frame(minWidth: 280, maxHeight: .infinity)
+            .frame(minWidth: 320, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -51,6 +52,7 @@ private struct CommitGraphList: View {
                     .background(selection == commit.id ? Color.accentColor.opacity(0.18) : .clear)
                     .contentShape(Rectangle())
                     .onTapGesture { selection = commit.id }
+                    .contextMenu { CommitContextMenu(commit: commit, viewModel: viewModel) }
                     .onAppear {
                         if index == viewModel.commits.count - 1, viewModel.canLoadMoreHistory {
                             Task { await viewModel.loadMoreHistory() }
@@ -202,34 +204,3 @@ struct RefPill: View {
     }
 }
 
-/// Right-hand inspector showing commit metadata (Screenshot 2 "Inspect Changes").
-struct CommitInspector: View {
-    let commit: Commit
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(commit.summary).font(.headline)
-                if !commit.body.isEmpty {
-                    Text(commit.body).font(.callout).foregroundStyle(.secondary)
-                }
-                Divider()
-                field("Commit", commit.id)
-                field("Author", "\(commit.authorName) <\(commit.authorEmail)>")
-                field("Author Date", commit.authorDate.formatted(date: .abbreviated, time: .shortened))
-                field("Committer", "\(commit.committerName) <\(commit.committerEmail)>")
-                field("Commit Date", commit.commitDate.formatted(date: .abbreviated, time: .shortened))
-                field("Parents", commit.parents.map { String($0.prefix(7)) }.joined(separator: ", "))
-            }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private func field(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.callout.monospaced()).textSelection(.enabled)
-        }
-    }
-}

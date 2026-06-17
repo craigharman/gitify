@@ -19,6 +19,12 @@ final class RepositoryViewModel {
     /// An interrupted merge/rebase in progress, if any.
     private(set) var operation: RepositoryOperation?
 
+    // Overview stats (loaded lazily when the Overview is shown).
+    private(set) var languageStats: [LanguageStat] = []
+    private(set) var topCommitters: [Committer] = []
+    private(set) var readme: String?
+    private var statsLoaded = false
+
     private(set) var isLoading = false
     private(set) var loadError: String?
 
@@ -258,6 +264,23 @@ final class RepositoryViewModel {
     func applyStash(_ stash: Stash) async { await perform { try await $0.stashApply(stash.id) } }
     func popStash(_ stash: Stash) async { await perform { try await $0.stashPop(stash.id) } }
     func dropStash(_ stash: Stash) async { await perform { try await $0.stashDrop(stash.id) } }
+    func branchFromStash(_ stash: Stash, name: String) async {
+        await perform { try await $0.stashBranch(name: name, selector: stash.id) }
+    }
+
+    // MARK: - Config & conflicts
+
+    func configValue(_ key: String) async -> String? {
+        guard let service else { return nil }
+        return await service.configValue(key)
+    }
+    func setConfigValue(_ key: String, _ value: String, global: Bool) async {
+        await perform { try await $0.setConfigValue(key, value, global: global) }
+    }
+    func resolveConflict(_ file: FileStatus, useOurs: Bool) async {
+        await mutate { try await $0.resolveConflict(path: file.path, useOurs: useOurs) }
+    }
+    func markResolved(_ file: FileStatus) async { await stage(file) }
 
     func addWorktree(path: String, branch: String?, create: Bool) async {
         await perform { try await $0.addWorktree(path: path, branch: branch, createBranch: create) }
@@ -273,23 +296,62 @@ final class RepositoryViewModel {
             try await service.fetch(remote: nil, onProgress: progress)
         }
     }
-    func pull() async {
-        await runOperation("Pulling") { service, progress in
-            try await service.pull(onProgress: progress)
+    func pull(rebase: Bool = false) async {
+        await runOperation(rebase ? "Pulling (rebase)" : "Pulling") { service, progress in
+            try await service.pull(rebase: rebase, onProgress: progress)
         }
     }
-    func push() async {
+    func push(force: Bool = false) async {
         let setUpstream = currentBranch?.upstream == nil
-        await runOperation("Pushing") { service, progress in
-            try await service.push(remote: nil, branch: nil, setUpstream: setUpstream, onProgress: progress)
+        await runOperation(force ? "Force Pushing" : "Pushing") { service, progress in
+            try await service.push(remote: nil, branch: nil, setUpstream: setUpstream,
+                                   force: force, onProgress: progress)
         }
     }
+    func pushTags() async {
+        await runOperation("Pushing Tags") { service, progress in
+            try await service.pushTags(remote: nil, onProgress: progress)
+        }
+    }
+    func deleteRemoteBranch(remote: String, branch: String) async {
+        await runOperation("Deleting \(remote)/\(branch)") { service, progress in
+            try await service.deleteRemoteBranch(remote: remote, branch: branch, onProgress: progress)
+        }
+    }
+    func addRemote(name: String, url: String) async { await perform { try await $0.addRemote(name: name, url: url) } }
+    func removeRemote(_ name: String) async { await perform { try await $0.removeRemote(name: name) } }
 
     // MARK: - Merge & rebase
 
     func mergePreview(branch: String) async -> MergePreview? {
         guard let service else { return nil }
         return try? await service.mergePreview(branch: branch)
+    }
+
+    // MARK: - Overview stats
+
+    /// Loads language/committer/README stats once per repository state (invalidated on reload).
+    func loadStatsIfNeeded() async {
+        guard !statsLoaded, let service = try? await resolveService() else { return }
+        statsLoaded = true
+        async let languages = service.languageStats()
+        async let committers = service.topCommitters(limit: 8)
+        async let readme = service.readme()
+        self.languageStats = await languages
+        self.topCommitters = await committers
+        self.readme = await readme
+    }
+
+    // MARK: - Commit inspection
+
+    func commitChanges(_ sha: String) async -> [FileChange] {
+        guard let service else { return [] }
+        return (try? await service.commitChanges(sha: sha)) ?? []
+    }
+
+    func commitFileDiff(_ sha: String, path: String) async -> FileDiff? {
+        guard let service else { return nil }
+        return try? await service.commitFileDiff(sha: sha, path: path)
     }
 
     func merge(branch: String, squash: Bool, noFastForward: Bool, noCommit: Bool, skipHooks: Bool) async {
@@ -301,6 +363,12 @@ final class RepositoryViewModel {
 
     func rebase(onto branch: String) async {
         await runIntegration("Rebase") { try await $0.rebase(onto: branch) }
+    }
+
+    func cherryPick(_ sha: String) async { await runIntegration("Cherry-pick") { try await $0.cherryPick(sha: sha) } }
+    func revert(_ sha: String) async { await runIntegration("Revert") { try await $0.revert(sha: sha) } }
+    func reset(to sha: String, mode: ResetMode) async {
+        await runIntegration("Reset") { try await $0.reset(to: sha, mode: mode) }
     }
 
     func abortOperation() async {
@@ -340,10 +408,10 @@ final class RepositoryViewModel {
         }
         do {
             try await action(service, progress)
-            await reloadEverything()
         } catch {
             loadError = "\(error)"
         }
+        await reloadEverything() // always reload (e.g. a pull --rebase may leave conflicts)
     }
 
     /// Reloads status, refs, history, worktrees, stashes, remotes, and reflog.
@@ -356,6 +424,7 @@ final class RepositoryViewModel {
         remotes = (try? await service.remotes()) ?? remotes
         reflog = (try? await service.reflog(limit: 200)) ?? reflog
         operation = await service.currentOperation()
+        statsLoaded = false // recompute overview stats on next visit
         if let page = try? await service.log(skip: 0, limit: 150) {
             commits = page.commits
             nextSkip = page.nextSkip

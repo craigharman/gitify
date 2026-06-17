@@ -139,7 +139,11 @@ private struct StagingFileRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .contextMenu {
-            if staged {
+            if file.isConflicted {
+                Button("Take Ours (current branch)") { Task { await viewModel.resolveConflict(file, useOurs: true) } }
+                Button("Take Theirs (incoming)") { Task { await viewModel.resolveConflict(file, useOurs: false) } }
+                Button("Mark Resolved") { Task { await viewModel.markResolved(file) } }
+            } else if staged {
                 Button("Unstage") { Task { await viewModel.unstage(file) } }
             } else {
                 Button("Stage") { Task { await viewModel.stage(file) } }

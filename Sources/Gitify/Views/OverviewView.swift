@@ -13,10 +13,80 @@ struct OverviewView: View {
 
                 infoSection
                 statsSection
+                if !viewModel.languageStats.isEmpty { languageSection }
+                if !viewModel.topCommitters.isEmpty { committersSection }
+                readmeSection
             }
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .task { await viewModel.loadStatsIfNeeded() }
+    }
+
+    private var languageSection: some View {
+        let total = max(viewModel.languageStats.reduce(0) { $0 + $1.lines }, 1)
+        return GroupBox("Line Count") {
+            VStack(spacing: 8) {
+                ForEach(Array(viewModel.languageStats.prefix(8).enumerated()), id: \.element.id) { index, stat in
+                    HStack(spacing: 10) {
+                        Text(stat.language).frame(width: 120, alignment: .leading)
+                        GeometryReader { geo in
+                            Capsule()
+                                .fill(GraphMetrics.color(index))
+                                .frame(width: max(6, geo.size.width * CGFloat(stat.lines) / CGFloat(total)))
+                        }
+                        .frame(height: 14)
+                        Text("\(stat.lines)").font(.callout.monospacedDigit())
+                            .frame(width: 70, alignment: .trailing).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private var committersSection: some View {
+        GroupBox("Top Committers") {
+            VStack(spacing: 0) {
+                ForEach(Array(viewModel.topCommitters.enumerated()), id: \.element.id) { index, committer in
+                    if index > 0 { Divider() }
+                    HStack(spacing: 10) {
+                        AvatarView(name: committer.name)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(committer.name)
+                            if !committer.email.isEmpty {
+                                Text(committer.email).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Text("\(committer.commits)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var readmeSection: some View {
+        GroupBox("README") {
+            if let readme = viewModel.readme, !readme.isEmpty {
+                Text(attributed(readme))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            } else {
+                Text("No README").foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            }
+        }
+    }
+
+    /// Renders README markdown (inline formatting); falls back to plain text.
+    private func attributed(_ markdown: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
     }
 
     private var infoSection: some View {

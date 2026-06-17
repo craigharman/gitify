@@ -126,6 +126,23 @@ public struct CLIGitService: GitService {
         return diff
     }
 
+    // MARK: - Commit changes
+
+    public func commitChanges(sha: String) async throws -> [FileChange] {
+        try Self.requireSafe(sha, "commit")
+        let nameStatus = try await runner.runString(["show", sha, "--format=", "--name-status", "-z"])
+        let numstat = try await runner.runString(["show", sha, "--format=", "--numstat", "-z"])
+        return CommitChangesParser.parse(nameStatus: nameStatus, numstat: numstat)
+    }
+
+    public func commitFileDiff(sha: String, path: String) async throws -> FileDiff {
+        try Self.requireSafe(sha, "commit")
+        let output = try await runner.runString([
+            "show", sha, "--format=", "--no-color", "--no-ext-diff", "-U3", "--", path,
+        ])
+        return DiffParser.parse(output, fallbackPath: path)
+    }
+
     // MARK: - Mutations
 
     public func stage(paths: [String]) async throws {
@@ -276,6 +293,41 @@ public struct CLIGitService: GitService {
         try await runner.run(["stash", "drop", selector])
     }
 
+    public func stashBranch(name: String, selector: String) async throws {
+        try Self.requireSafe(name, "branch name")
+        try Self.requireSafe(selector, "stash")
+        try await runner.run(["stash", "branch", name, selector])
+    }
+
+    // MARK: - Config & conflicts
+
+    public func configValue(_ key: String) async -> String? {
+        guard (try? Self.requireSafe(key, "key")) != nil else { return nil }
+        guard let result = try? await runner.runRaw(["config", "--get", key]), result.succeeded else { return nil }
+        let value = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    public func setConfigValue(_ key: String, _ value: String, global: Bool) async throws {
+        try Self.requireSafe(key, "key")
+        var args = ["config"]
+        if global { args.append("--global") }
+        args.append(contentsOf: [key, value]) // key is validated; value is positional
+        try await runner.run(args)
+    }
+
+    public func conflictedFiles() async throws -> [String] {
+        let output = try await runner.run(["diff", "--name-only", "--diff-filter=U", "-z"])
+        return String(decoding: output, as: UTF8.self)
+            .split(separator: "\u{0}", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    public func resolveConflict(path: String, useOurs: Bool) async throws {
+        try Self.requireSafe(path, "path")
+        try await runner.run(["checkout", useOurs ? "--ours" : "--theirs", "--", path])
+        try await runner.run(["add", "--", path])
+    }
+
     // MARK: - Worktrees
 
     public func addWorktree(path: String, branch: String?, createBranch: Bool) async throws {
@@ -308,17 +360,44 @@ public struct CLIGitService: GitService {
         try await runner.runStreaming(args, onProgress: onProgress)
     }
 
-    public func pull(onProgress: (@Sendable (String) -> Void)?) async throws {
-        try await runner.runStreaming(["pull", "--progress"], onProgress: onProgress)
+    public func pull(rebase: Bool, onProgress: (@Sendable (String) -> Void)?) async throws {
+        var args = ["pull", "--progress"]
+        if rebase { args.append("--rebase") }
+        try await runner.runStreaming(args, onProgress: onProgress)
     }
 
-    public func push(remote: String?, branch: String?, setUpstream: Bool,
+    public func push(remote: String?, branch: String?, setUpstream: Bool, force: Bool,
                      onProgress: (@Sendable (String) -> Void)?) async throws {
         var args = ["push", "--progress"]
         if setUpstream { args.append("--set-upstream") }
+        if force { args.append("--force-with-lease") }
         if let remote { args.append(try Self.requireSafe(remote, "remote")) }
         if let branch { args.append(try Self.requireSafe(branch, "branch")) }
         try await runner.runStreaming(args, onProgress: onProgress)
+    }
+
+    public func pushTags(remote: String?, onProgress: (@Sendable (String) -> Void)?) async throws {
+        var args = ["push", "--progress", "--tags"]
+        if let remote { args.append(try Self.requireSafe(remote, "remote")) }
+        try await runner.runStreaming(args, onProgress: onProgress)
+    }
+
+    public func deleteRemoteBranch(remote: String, branch: String,
+                                   onProgress: (@Sendable (String) -> Void)?) async throws {
+        try Self.requireSafe(remote, "remote")
+        try Self.requireSafe(branch, "branch")
+        try await runner.runStreaming(["push", "--progress", remote, "--delete", branch], onProgress: onProgress)
+    }
+
+    public func addRemote(name: String, url: String) async throws {
+        try Self.requireSafe(name, "remote name")
+        try Self.requireSafe(url, "remote URL")
+        try await runner.run(["remote", "add", "--", name, url])
+    }
+
+    public func removeRemote(name: String) async throws {
+        try Self.requireSafe(name, "remote name")
+        try await runner.run(["remote", "remove", name])
     }
 
     // MARK: - Merge & rebase
@@ -361,6 +440,21 @@ public struct CLIGitService: GitService {
         try await runner.run(["rebase", branch])
     }
 
+    public func cherryPick(sha: String) async throws {
+        try Self.requireSafe(sha, "commit")
+        try await runner.run(["cherry-pick", sha])
+    }
+
+    public func revert(sha: String) async throws {
+        try Self.requireSafe(sha, "commit")
+        try await runner.run(["revert", "--no-edit", sha])
+    }
+
+    public func reset(to sha: String, mode: ResetMode) async throws {
+        try Self.requireSafe(sha, "commit")
+        try await runner.run(["reset", "--\(mode.rawValue)", sha])
+    }
+
     public func abortMerge() async throws {
         try await runner.run(["merge", "--abort"])
     }
@@ -384,6 +478,77 @@ public struct CLIGitService: GitService {
             if FileManager.default.fileExists(atPath: path) { return .rebase }
         }
         return nil
+    }
+
+    // MARK: - Repository stats
+
+    public func languageStats() async -> [LanguageStat] {
+        guard let listing = try? await runner.runString(["ls-files", "-z"]) else { return [] }
+        let paths = listing.split(separator: "\u{0}").map(String.init)
+        let root = self.root
+        // File reading is done off the calling context to avoid blocking the UI.
+        return await Task.detached(priority: .utility) {
+            var byLanguage: [String: (lines: Int, files: Int)] = [:]
+            for path in paths {
+                let url = root.appendingPathComponent(path)
+                guard let data = try? Data(contentsOf: url), !data.isEmpty,
+                      data.count < 5_000_000,                       // skip very large files
+                      !data.prefix(8000).contains(0) else { continue } // skip binary
+                let lines = data.reduce(0) { $1 == 0x0A ? $0 + 1 : $0 }
+                let language = Self.language(for: (path as NSString).pathExtension.lowercased())
+                var entry = byLanguage[language] ?? (0, 0)
+                entry.lines += max(lines, 1)
+                entry.files += 1
+                byLanguage[language] = entry
+            }
+            return byLanguage
+                .map { LanguageStat(language: $0.key, lines: $0.value.lines, files: $0.value.files) }
+                .sorted { $0.lines > $1.lines }
+        }.value
+    }
+
+    public func topCommitters(limit: Int) async -> [Committer] {
+        guard let output = try? await runner.runString(["shortlog", "-sne", "HEAD"]) else { return [] }
+        var committers: [Committer] = []
+        for line in output.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let tab = trimmed.firstIndex(of: "\t"),
+                  let count = Int(trimmed[..<tab].trimmingCharacters(in: .whitespaces)) else { continue }
+            let rest = String(trimmed[trimmed.index(after: tab)...])
+            if let lt = rest.lastIndex(of: "<"), let gt = rest.lastIndex(of: ">"), lt < gt {
+                let name = String(rest[..<lt]).trimmingCharacters(in: .whitespaces)
+                let email = String(rest[rest.index(after: lt)..<gt])
+                committers.append(Committer(name: name, email: email, commits: count))
+            } else {
+                committers.append(Committer(name: rest, email: "", commits: count))
+            }
+        }
+        return Array(committers.prefix(limit))
+    }
+
+    public func readme() async -> String? {
+        let candidates = ["README.md", "README.markdown", "README.txt", "README", "README.rst"]
+        for name in candidates {
+            let url = root.appendingPathComponent(name)
+            if let contents = try? String(contentsOf: url, encoding: .utf8) { return contents }
+        }
+        return nil
+    }
+
+    /// Maps a lowercased file extension to a human-readable language name.
+    static func language(for ext: String) -> String {
+        let map: [String: String] = [
+            "swift": "Swift", "m": "Objective-C", "mm": "Objective-C++", "h": "C/C++ Header",
+            "c": "C", "cc": "C++", "cpp": "C++", "cxx": "C++", "hpp": "C++ Header",
+            "js": "JavaScript", "jsx": "JavaScript", "ts": "TypeScript", "tsx": "TypeScript",
+            "py": "Python", "rb": "Ruby", "go": "Go", "rs": "Rust", "java": "Java", "kt": "Kotlin",
+            "sh": "Shell", "bash": "Shell", "zsh": "Shell", "pl": "Perl", "php": "PHP",
+            "md": "Markdown", "markdown": "Markdown", "rst": "reStructuredText",
+            "yml": "YAML", "yaml": "YAML", "json": "JSON", "toml": "TOML", "xml": "XML",
+            "html": "HTML", "css": "CSS", "scss": "SCSS", "sql": "SQL",
+            "txt": "Plain Text", "": "Other",
+        ]
+        return map[ext] ?? ext.uppercased()
     }
 
     // MARK: - Clone (repository-independent)

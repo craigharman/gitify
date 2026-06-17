@@ -40,6 +40,12 @@ public protocol GitService: Sendable {
     /// working-tree-vs-index diff. Untracked files are rendered as all-additions.
     func diff(path: String, staged: Bool) async throws -> FileDiff
 
+    /// Files changed by a commit, with per-file line counts (for the history inspector).
+    func commitChanges(sha: String) async throws -> [FileChange]
+
+    /// The diff a commit applied to a single path.
+    func commitFileDiff(sha: String, path: String) async throws -> FileDiff
+
     // MARK: Mutations
 
     /// Stages the given paths (`git add`).
@@ -107,6 +113,9 @@ public protocol GitService: Sendable {
     /// Drops a stash.
     func stashDrop(_ selector: String) async throws
 
+    /// Creates a new branch from a stash and applies it (`git stash branch`).
+    func stashBranch(name: String, selector: String) async throws
+
     // MARK: Worktrees
 
     /// Adds a worktree at `path`, optionally checking out / creating `branch`.
@@ -123,12 +132,25 @@ public protocol GitService: Sendable {
     /// Fetches from a remote (all remotes when `remote` is nil), pruning deleted refs.
     func fetch(remote: String?, onProgress: (@Sendable (String) -> Void)?) async throws
 
-    /// Pulls the current branch from its upstream.
-    func pull(onProgress: (@Sendable (String) -> Void)?) async throws
+    /// Pulls the current branch from its upstream, optionally rebasing instead of merging.
+    func pull(rebase: Bool, onProgress: (@Sendable (String) -> Void)?) async throws
 
-    /// Pushes `branch` (default current) to `remote`, optionally setting upstream.
-    func push(remote: String?, branch: String?, setUpstream: Bool,
+    /// Pushes `branch` (default current) to `remote`. `force` uses `--force-with-lease`.
+    func push(remote: String?, branch: String?, setUpstream: Bool, force: Bool,
               onProgress: (@Sendable (String) -> Void)?) async throws
+
+    /// Pushes all tags to `remote`.
+    func pushTags(remote: String?, onProgress: (@Sendable (String) -> Void)?) async throws
+
+    /// Deletes `branch` on `remote` (`git push <remote> --delete`).
+    func deleteRemoteBranch(remote: String, branch: String,
+                            onProgress: (@Sendable (String) -> Void)?) async throws
+
+    /// Adds a new remote.
+    func addRemote(name: String, url: String) async throws
+
+    /// Removes a remote.
+    func removeRemote(name: String) async throws
 
     // MARK: Merge & rebase
 
@@ -146,6 +168,15 @@ public protocol GitService: Sendable {
     /// Rebases the current HEAD onto `branch`.
     func rebase(onto branch: String) async throws
 
+    /// Applies `sha` as a new commit on the current branch (`git cherry-pick`).
+    func cherryPick(sha: String) async throws
+
+    /// Creates a commit that undoes `sha` (`git revert --no-edit`).
+    func revert(sha: String) async throws
+
+    /// Moves the current branch to `sha`. `mode` controls index/working-tree handling.
+    func reset(to sha: String, mode: ResetMode) async throws
+
     /// Aborts an in-progress merge.
     func abortMerge() async throws
 
@@ -154,6 +185,31 @@ public protocol GitService: Sendable {
 
     /// The interrupted operation currently in progress, if any.
     func currentOperation() async -> RepositoryOperation?
+
+    // MARK: Repository stats (best-effort)
+
+    /// Lines-of-code per language across tracked text files.
+    func languageStats() async -> [LanguageStat]
+
+    /// Top contributors by commit count (`git shortlog`).
+    func topCommitters(limit: Int) async -> [Committer]
+
+    /// The repository's README contents, if one exists at the root.
+    func readme() async -> String?
+
+    // MARK: Config & conflicts
+
+    /// The effective value of a git config key (local, falling back to global).
+    func configValue(_ key: String) async -> String?
+
+    /// Sets a git config value, locally or `--global`.
+    func setConfigValue(_ key: String, _ value: String, global: Bool) async throws
+
+    /// Files with unresolved merge conflicts.
+    func conflictedFiles() async throws -> [String]
+
+    /// Resolves a conflicted file by taking our side (`useOurs`) or theirs, then staging it.
+    func resolveConflict(path: String, useOurs: Bool) async throws
 }
 
 public extension GitService {

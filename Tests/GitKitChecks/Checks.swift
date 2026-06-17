@@ -27,6 +27,70 @@ enum Checks {
         await test("remotes/push/fetch/clone round-trip", remoteOps)
         await test("flag-smuggling arguments are rejected", argumentInjection)
         await test("hunk staging stages one hunk at a time", hunkStaging)
+        await test("merge preview detects clean vs conflicting", mergePreview)
+        await test("merge and rebase update history; abort recovers", mergeRebase)
+    }
+
+    /// Builds main + feature branches; returns the repo with `feature` ahead of `main`.
+    private static func twoBranchRepo(conflicting: Bool) async throws -> TestRepository {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "a\nb\nc\n")
+        try await repo.git("checkout", "-q", "-b", "feature")
+        try await repo.commit("feature edit", file: conflicting ? "f.txt" : "feature.txt",
+                              contents: conflicting ? "a\nFEATURE\nc\n" : "new file\n")
+        try await repo.git("checkout", "-q", "main")
+        if conflicting {
+            try await repo.commit("main edit", file: "f.txt", contents: "a\nMAIN\nc\n")
+        }
+        return repo
+    }
+
+    static func mergePreview() async throws {
+        let cleanRepo = try await twoBranchRepo(conflicting: false)
+        let clean = try await cleanRepo.service()
+        await expect(try await clean.mergePreview(branch: "feature").isClean, "clean merge has no conflicts")
+
+        let conflictRepo = try await twoBranchRepo(conflicting: true)
+        let conflicting = try await conflictRepo.service()
+        let preview = try await conflicting.mergePreview(branch: "feature")
+        await expect(!preview.isClean, "conflicting merge detected")
+        await expect(preview.conflictingFiles.contains("f.txt"), "f.txt flagged as conflicting")
+    }
+
+    static func mergeRebase() async throws {
+        // Clean merge with --no-ff creates a merge commit.
+        let repo = try await twoBranchRepo(conflicting: false)
+        let service = try await repo.service()
+        try await service.merge(branch: "feature", squash: false, noFastForward: true,
+                                noCommit: false, skipHooks: false)
+        let head = try await service.log(limit: 1, revisions: ["HEAD"])
+        await expect(head.commits.first?.isMerge == true, "merge commit created")
+        await expect(try await service.currentOperation() == nil, "no operation pending after clean merge")
+
+        // Conflicting merge leaves a merge in progress; abort recovers.
+        let conflictRepo = try await twoBranchRepo(conflicting: true)
+        let cService = try await conflictRepo.service()
+        await expectThrows("conflicting merge throws") {
+            try await cService.merge(branch: "feature", squash: false, noFastForward: false,
+                                     noCommit: false, skipHooks: false)
+        }
+        await expect(try await cService.currentOperation() == .merge, "merge in progress detected")
+        try await cService.abortMerge()
+        await expect(try await cService.currentOperation() == nil, "merge aborted")
+        await expect(try await cService.status().hasChanges == false, "working tree clean after abort")
+
+        // Rebase feature onto an advanced main (clean).
+        let rebaseRepo = try await TestRepository()
+        try await rebaseRepo.commit("base")
+        try await rebaseRepo.git("checkout", "-q", "-b", "topic")
+        try await rebaseRepo.commit("topic work", file: "t.txt", contents: "t\n")
+        try await rebaseRepo.git("checkout", "-q", "main")
+        try await rebaseRepo.commit("main work", file: "m.txt", contents: "m\n")
+        try await rebaseRepo.git("checkout", "-q", "topic")
+        let rService = try await rebaseRepo.service()
+        try await rService.rebase(onto: "main")
+        let topicLog = try await rService.log(limit: 10, revisions: ["HEAD"])
+        await expect(topicLog.commits.contains { $0.summary == "main work" }, "topic now contains main's commit")
     }
 
     static func hunkStaging() async throws {

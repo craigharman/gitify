@@ -129,6 +129,31 @@ public protocol GitService: Sendable {
     /// Pushes `branch` (default current) to `remote`, optionally setting upstream.
     func push(remote: String?, branch: String?, setUpstream: Bool,
               onProgress: (@Sendable (String) -> Void)?) async throws
+
+    // MARK: Merge & rebase
+
+    /// Dry-run merge of `branch` into HEAD, reporting any conflicting files.
+    func mergePreview(branch: String) async throws -> MergePreview
+
+    /// Merges `branch` into the current HEAD.
+    /// - squash: combine changes into the index without committing (`--squash`).
+    /// - noFastForward: always create a merge commit (`--no-ff`).
+    /// - noCommit: perform the merge but stop before committing (`--no-commit`).
+    /// - skipHooks: bypass pre-merge / commit-msg hooks (`--no-verify`).
+    func merge(branch: String, squash: Bool, noFastForward: Bool,
+               noCommit: Bool, skipHooks: Bool) async throws
+
+    /// Rebases the current HEAD onto `branch`.
+    func rebase(onto branch: String) async throws
+
+    /// Aborts an in-progress merge.
+    func abortMerge() async throws
+
+    /// Aborts an in-progress rebase.
+    func abortRebase() async throws
+
+    /// The interrupted operation currently in progress, if any.
+    func currentOperation() async -> RepositoryOperation?
 }
 
 public extension GitService {

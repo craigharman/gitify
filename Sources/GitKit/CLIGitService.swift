@@ -321,6 +321,71 @@ public struct CLIGitService: GitService {
         try await runner.runStreaming(args, onProgress: onProgress)
     }
 
+    // MARK: - Merge & rebase
+
+    public func mergePreview(branch: String) async throws -> MergePreview {
+        try Self.requireSafe(branch, "branch")
+        let result = try await runner.runRaw(["merge-tree", "--write-tree", "-z", "--name-only", "HEAD", branch])
+        if result.succeeded { return MergePreview(conflictingFiles: []) }
+        guard result.exitCode == 1 else {
+            throw GitError.commandFailed(command: "merge-tree", exitCode: result.exitCode, stderr: result.stderr)
+        }
+        // Output: <tree-oid>\0<file>\0...\0\0<messages>. Conflicted files are the entries
+        // after the tree OID up to the first empty (section-separator) entry.
+        let parts = result.stdoutString.components(separatedBy: "\u{0}")
+        var files: [String] = []
+        for part in parts.dropFirst() {
+            if part.isEmpty { break }
+            files.append(part)
+        }
+        return MergePreview(conflictingFiles: files)
+    }
+
+    public func merge(branch: String, squash: Bool, noFastForward: Bool,
+                      noCommit: Bool, skipHooks: Bool) async throws {
+        try Self.requireSafe(branch, "branch")
+        var args = ["merge"]
+        if squash {
+            args.append("--squash")
+        } else {
+            if noFastForward { args.append("--no-ff") }
+            if noCommit { args.append("--no-commit") }
+        }
+        if skipHooks { args.append("--no-verify") }
+        args.append(branch)
+        try await runner.run(args)
+    }
+
+    public func rebase(onto branch: String) async throws {
+        try Self.requireSafe(branch, "branch")
+        try await runner.run(["rebase", branch])
+    }
+
+    public func abortMerge() async throws {
+        try await runner.run(["merge", "--abort"])
+    }
+
+    public func abortRebase() async throws {
+        try await runner.run(["rebase", "--abort"])
+    }
+
+    public func currentOperation() async -> RepositoryOperation? {
+        if let head = try? await runner.runRaw(["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]),
+           head.succeeded {
+            return .merge
+        }
+        // A rebase leaves a rebase-merge / rebase-apply directory under the git dir.
+        if let gitDir = try? await runner.runRaw(["rev-parse", "--git-path", "rebase-merge"]) {
+            let path = gitDir.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if FileManager.default.fileExists(atPath: path) { return .rebase }
+        }
+        if let gitDir = try? await runner.runRaw(["rev-parse", "--git-path", "rebase-apply"]) {
+            let path = gitDir.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+            if FileManager.default.fileExists(atPath: path) { return .rebase }
+        }
+        return nil
+    }
+
     // MARK: - Clone (repository-independent)
 
     /// Clones `url` into a new directory named after the repo (or `name`) under `parent`,

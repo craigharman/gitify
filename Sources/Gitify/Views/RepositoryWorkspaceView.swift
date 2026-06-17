@@ -19,6 +19,7 @@ struct RepositoryWorkspaceView: View {
     let ref: RepositoryRef
     @State private var viewModel: RepositoryViewModel
     @State private var section: WorkspaceSection = .changes
+    @State private var integrationSheet: IntegrationSheet?
 
     init(ref: RepositoryRef) {
         self.ref = ref
@@ -27,7 +28,7 @@ struct RepositoryWorkspaceView: View {
 
     var body: some View {
         NavigationSplitView {
-            WorkspaceRail(viewModel: viewModel, section: $section)
+            WorkspaceRail(viewModel: viewModel, section: $section, integrationSheet: $integrationSheet)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
         } detail: {
             content
@@ -52,10 +53,7 @@ struct RepositoryWorkspaceView: View {
                 }
                 .help("Push current branch").disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
 
-                Button { promptNewBranch() } label: {
-                    Label("New Branch", systemImage: "plus.square.on.square")
-                }
-                .help("Create a branch")
+                branchMenu
 
                 Button { Task { await viewModel.load() } } label: {
                     Image(systemName: "arrow.clockwise")
@@ -63,10 +61,23 @@ struct RepositoryWorkspaceView: View {
                 .help("Refresh").disabled(viewModel.isLoading)
             }
         }
+        .sheet(item: $integrationSheet) { sheet in
+            switch sheet {
+            case .merge(let branch): MergeSheet(viewModel: viewModel, branch: branch)
+            case .rebase(let branch): RebaseSheet(viewModel: viewModel, branch: branch)
+            }
+        }
         .task { await viewModel.load() }
         .overlay(alignment: .top) {
-            if let error = viewModel.loadError {
-                ErrorBanner(message: error)
+            VStack(spacing: 0) {
+                if let operation = viewModel.operation {
+                    OperationBanner(operation: operation) {
+                        Task { await viewModel.abortOperation() }
+                    }
+                }
+                if let error = viewModel.loadError {
+                    ErrorBanner(message: error)
+                }
             }
         }
         .overlay {
@@ -75,6 +86,39 @@ struct RepositoryWorkspaceView: View {
                                  detail: viewModel.operationProgress)
             }
         }
+    }
+
+    /// Toolbar "Branch" menu: checkout, new branch, merge, rebase.
+    @ViewBuilder
+    private var branchMenu: some View {
+        let others = viewModel.localBranches.filter { !$0.isHead }
+        Menu {
+            if !viewModel.localBranches.isEmpty {
+                Menu("Checkout") {
+                    ForEach(viewModel.localBranches) { branch in
+                        Button {
+                            Task { await viewModel.checkout(branch.name) }
+                        } label: {
+                            if branch.isHead { Label(branch.name, systemImage: "checkmark") }
+                            else { Text(branch.name) }
+                        }
+                    }
+                }
+            }
+            Button("New Branch…") { promptNewBranch() }
+            Divider()
+            Button("Merge into Current Branch…") {
+                if let target = others.first?.name { integrationSheet = .merge(target) }
+            }
+            .disabled(others.isEmpty)
+            Button("Rebase Current Branch…") {
+                if let target = others.first?.name { integrationSheet = .rebase(target) }
+            }
+            .disabled(others.isEmpty)
+        } label: {
+            Label("Branch", systemImage: "arrow.triangle.branch")
+        }
+        .help("Branch actions")
     }
 
     private func promptNewBranch() {
@@ -189,11 +233,24 @@ private struct OperationOverlay: View {
     }
 }
 
+/// A merge/rebase dialog to present, parameterized by the selected branch.
+private enum IntegrationSheet: Identifiable {
+    case merge(String)
+    case rebase(String)
+    var id: String {
+        switch self {
+        case .merge(let b): "merge:\(b)"
+        case .rebase(let b): "rebase:\(b)"
+        }
+    }
+}
+
 /// The navigation rail: a repo switcher header, section list, and current-branch footer.
 private struct WorkspaceRail: View {
     @Environment(AppModel.self) private var model
     let viewModel: RepositoryViewModel
     @Binding var section: WorkspaceSection
+    @Binding var integrationSheet: IntegrationSheet?
 
     var body: some View {
         List(selection: $section) {
@@ -288,6 +345,14 @@ private struct WorkspaceRail: View {
     private func branchMenu(_ branch: Ref) -> some View {
         if !branch.isHead {
             Button("Checkout") { Task { await viewModel.checkout(branch.name) } }
+            Divider()
+            Button("Merge into “\(viewModel.currentBranch?.name ?? "current")”…") {
+                integrationSheet = .merge(branch.name)
+            }
+            Button("Rebase “\(viewModel.currentBranch?.name ?? "current")” onto This…") {
+                integrationSheet = .rebase(branch.name)
+            }
+            Divider()
         }
         Button("Rename…") {
             if let name = Prompt.text(title: "Rename Branch", defaultValue: branch.name, confirm: "Rename") {
@@ -334,5 +399,26 @@ private struct ErrorBanner: View {
             .frame(maxWidth: .infinity)
             .background(.red.opacity(0.15))
             .overlay(Rectangle().frame(height: 1).foregroundStyle(.red.opacity(0.3)), alignment: .bottom)
+    }
+}
+
+/// Shown while a conflicted merge/rebase is in progress, offering to abort.
+private struct OperationBanner: View {
+    let operation: RepositoryOperation
+    let onAbort: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            Text("\(operation.rawValue.capitalized) in progress — resolve conflicts and commit, or abort.")
+            Spacer()
+            Button("Abort \(operation.rawValue.capitalized)", role: .destructive, action: onAbort)
+                .controlSize(.small)
+        }
+        .font(.callout)
+        .padding(8)
+        .frame(maxWidth: .infinity)
+        .background(.orange.opacity(0.15))
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(.orange.opacity(0.4)), alignment: .bottom)
     }
 }

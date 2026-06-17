@@ -41,7 +41,8 @@ Implemented:
 - Git engine: status (porcelain v2), history (paged log), refs (branches/tags + tracking),
   worktrees, stashes, unified diffs, mutations (stage/unstage/discard, commit, amend),
   hunk-level staging, lane-assignment graph layout, branch/tag/stash/worktree management,
-  reflog, remotes, and streamed network ops (fetch/pull/push/clone). Argument-injection
+  merge (with conflict preview) / rebase / abort, reflog, remotes, and streamed network ops
+  (fetch/pull/push/clone). Argument-injection
   hardened (`--` separators, leading-dash rejection, restricted `GIT_ALLOW_PROTOCOL`).
   Covered by a 92-check integration suite.
 - App: repository manager with a sidebar repo-switcher (add / **clone-from-URL** with

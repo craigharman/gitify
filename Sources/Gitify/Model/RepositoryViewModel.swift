@@ -16,6 +16,8 @@ final class RepositoryViewModel {
     private(set) var stashes: [Stash] = []
     private(set) var remotes: [GitRemote] = []
     private(set) var reflog: [ReflogEntry] = []
+    /// An interrupted merge/rebase in progress, if any.
+    private(set) var operation: RepositoryOperation?
 
     private(set) var isLoading = false
     private(set) var loadError: String?
@@ -73,6 +75,7 @@ final class RepositoryViewModel {
             self.stashes = try await stashes
             self.remotes = (try? await remotes) ?? []
             self.reflog = (try? await reflog) ?? []
+            self.operation = await service.currentOperation()
             let page = try await firstPage
             self.commits = page.commits
             self.nextSkip = page.nextSkip
@@ -282,6 +285,46 @@ final class RepositoryViewModel {
         }
     }
 
+    // MARK: - Merge & rebase
+
+    func mergePreview(branch: String) async -> MergePreview? {
+        guard let service else { return nil }
+        return try? await service.mergePreview(branch: branch)
+    }
+
+    func merge(branch: String, squash: Bool, noFastForward: Bool, noCommit: Bool, skipHooks: Bool) async {
+        await runIntegration("Merge") {
+            try await $0.merge(branch: branch, squash: squash, noFastForward: noFastForward,
+                               noCommit: noCommit, skipHooks: skipHooks)
+        }
+    }
+
+    func rebase(onto branch: String) async {
+        await runIntegration("Rebase") { try await $0.rebase(onto: branch) }
+    }
+
+    func abortOperation() async {
+        guard let op = operation else { return }
+        await runIntegration("Abort") {
+            switch op {
+            case .merge: try await $0.abortMerge()
+            case .rebase: try await $0.abortRebase()
+            }
+        }
+    }
+
+    /// Runs a merge/rebase/abort, then always reloads so an interrupted (conflicted) state
+    /// is reflected even when the command exits non-zero.
+    private func runIntegration(_ label: String, _ action: (CLIGitService) async throws -> Void) async {
+        guard let service else { return }
+        do {
+            try await action(service)
+        } catch {
+            loadError = "\(label) stopped — resolve conflicts in the working tree, then commit. (\(error))"
+        }
+        await reloadEverything()
+    }
+
     /// Runs a streamed network operation, surfacing live progress, then reloads.
     private func runOperation(
         _ title: String,
@@ -312,6 +355,7 @@ final class RepositoryViewModel {
         stashes = (try? await service.stashes()) ?? stashes
         remotes = (try? await service.remotes()) ?? remotes
         reflog = (try? await service.reflog(limit: 200)) ?? reflog
+        operation = await service.currentOperation()
         if let page = try? await service.log(skip: 0, limit: 150) {
             commits = page.commits
             nextSkip = page.nextSkip

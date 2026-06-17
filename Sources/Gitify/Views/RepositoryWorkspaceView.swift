@@ -373,8 +373,18 @@ private struct WorkspaceRail: View {
             }
 
             Section("Remote") {
-                Label("Remote Branches", systemImage: "cloud").tag(WorkspaceSection.remotes)
-                    .contextMenu { remoteMenu }
+                if viewModel.remoteBranches.isEmpty {
+                    Label("Remote Branches", systemImage: "cloud").tag(WorkspaceSection.remotes)
+                        .contextMenu { remoteMenu }
+                } else {
+                    // Same tree as Local: the remote name (e.g. origin) is the top folder.
+                    // Drop the symbolic "<remote>/HEAD" ref — it's a pointer, not a branch.
+                    let remotes = viewModel.remoteBranches.filter { !$0.name.hasSuffix("/HEAD") }
+                    ForEach(BranchNode.tree(from: remotes)) { node in
+                        BranchTreeNode(node: node, viewModel: viewModel,
+                                       integrationSheet: $integrationSheet, isRemote: true, folderIcon: "cloud")
+                    }
+                }
             }
             Section("Tags") {
                 Label("Tags", systemImage: "tag").tag(WorkspaceSection.tags)
@@ -460,11 +470,14 @@ struct BranchNode: Identifiable {
     }
 }
 
-/// Renders a branch-tree node: a selectable branch leaf, or an expandable folder.
+/// Renders a branch-tree node: a selectable branch leaf, or an expandable folder. Used for
+/// both Local and Remote branches (`isRemote` selects the right leaf menu and folder icon).
 private struct BranchTreeNode: View {
     let node: BranchNode
     let viewModel: RepositoryViewModel
     @Binding var integrationSheet: IntegrationSheet?
+    var isRemote = false
+    var folderIcon = "folder"
     @State private var expanded = true
 
     var body: some View {
@@ -473,7 +486,7 @@ private struct BranchTreeNode: View {
                 HStack {
                     Text(node.name)
                     Spacer()
-                    if let ahead = ref.ahead, let behind = ref.behind, ahead + behind > 0 {
+                    if !isRemote, let ahead = ref.ahead, let behind = ref.behind, ahead + behind > 0 {
                         Text("↑\(ahead) ↓\(behind)").font(.caption2).foregroundStyle(.secondary)
                     }
                     if ref.isHead { Image(systemName: "checkmark").foregroundStyle(.secondary) }
@@ -482,14 +495,42 @@ private struct BranchTreeNode: View {
                 Image(systemName: "arrow.triangle.branch")
             }
             .tag(WorkspaceSection.branch(ref.name))
-            .contextMenu { BranchContextMenu(branch: ref, viewModel: viewModel, integrationSheet: $integrationSheet) }
+            .contextMenu {
+                if isRemote {
+                    RemoteBranchMenu(branch: ref, viewModel: viewModel)
+                } else {
+                    BranchContextMenu(branch: ref, viewModel: viewModel, integrationSheet: $integrationSheet)
+                }
+            }
         } else {
             DisclosureGroup(isExpanded: $expanded) {
+                // Nested folders always use the folder icon (only the remote root is a cloud).
                 ForEach(node.children) { child in
-                    BranchTreeNode(node: child, viewModel: viewModel, integrationSheet: $integrationSheet)
+                    BranchTreeNode(node: child, viewModel: viewModel,
+                                   integrationSheet: $integrationSheet, isRemote: isRemote)
                 }
             } label: {
-                Label(node.name, systemImage: "folder")
+                Label(node.name, systemImage: folderIcon)
+            }
+        }
+    }
+}
+
+/// Right-click actions for a remote-tracking branch.
+private struct RemoteBranchMenu: View {
+    let branch: Ref
+    let viewModel: RepositoryViewModel
+
+    var body: some View {
+        Button("Checkout as Local Branch") { Task { await viewModel.checkout(branch.name) } }
+        Divider()
+        Button("Delete Remote Branch…", role: .destructive) {
+            guard let slash = branch.name.firstIndex(of: "/") else { return }
+            let remote = String(branch.name[..<slash])
+            let name = String(branch.name[branch.name.index(after: slash)...])
+            if Prompt.confirmDestructive(title: "Delete “\(branch.name)” on the remote?",
+                                         message: "This deletes the branch on \(remote).", confirm: "Delete") {
+                Task { await viewModel.deleteRemoteBranch(remote: remote, branch: name) }
             }
         }
     }

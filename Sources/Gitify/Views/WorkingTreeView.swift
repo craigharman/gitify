@@ -223,21 +223,29 @@ struct StatusBadge: View {
 /// Commit message editor with Commit / Amend controls.
 private struct CommitBox: View {
     @Bindable var viewModel: RepositoryViewModel
+    @FocusState private var editorFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextEditor(text: $viewModel.commitMessage)
-                .font(.body)
-                .frame(height: 72)
-                .overlay(alignment: .topLeading) {
-                    if viewModel.commitMessage.isEmpty {
-                        Text("Commit message")
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 5).padding(.vertical, 8)
-                            .allowsHitTesting(false)
-                    }
+            ZStack(alignment: .topLeading) {
+                // Placeholder shares the editor's text-start position and clears as soon as
+                // the field is focused (not only when typing begins).
+                if viewModel.commitMessage.isEmpty && !editorFocused {
+                    Text("Commit message")
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+                        .padding(.leading, 5)
+                        .allowsHitTesting(false)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                TextEditor(text: $viewModel.commitMessage)
+                    .focused($editorFocused)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+            }
+            .padding(8) // inner padding so text/cursor isn't against the border
+            .frame(height: 88)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
 
             HStack {
                 Toggle("Amend", isOn: Binding(

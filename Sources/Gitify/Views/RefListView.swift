@@ -27,7 +27,6 @@ struct RefListView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle(title)
         .safeAreaInset(edge: .top) {
             if isTags {
                 HStack {

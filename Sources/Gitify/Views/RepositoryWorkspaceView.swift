@@ -32,11 +32,9 @@ struct RepositoryWorkspaceView: View {
         } detail: {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("") // avoid a duplicate app-name title over the content
         }
-        // Native title + subtitle render in the unified title bar and truncate gracefully,
-        // so a long repo name never overflows the sidebar.
-        .navigationTitle(ref.name)
-        .navigationSubtitle(sectionTitle)
+        .background(TitlebarBrand())
         .toolbar {
             ToolbarItemGroup {
                 Button { Task { await viewModel.fetch() } } label: {
@@ -86,21 +84,6 @@ struct RepositoryWorkspaceView: View {
         Task { await viewModel.createBranch(name: name, checkout: true) }
     }
 
-    /// Subtitle shown under the repo name, reflecting the active section.
-    private var sectionTitle: String {
-        switch section {
-        case .overview: "Overview"
-        case .changes: "Working Tree"
-        case .history: "History"
-        case .branch(let name): name
-        case .remotes: "Remote Branches"
-        case .tags: "Tags"
-        case .stashes: "Stashes"
-        case .worktrees: "Worktrees"
-        case .reflog: "Reflog"
-        }
-    }
-
     @ViewBuilder
     private var content: some View {
         switch section {
@@ -148,30 +131,23 @@ private struct RepoSwitcher: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "shippingbox.fill")
-                    .font(.title3)
                     .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(current.name)
-                        .font(.headline)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text("^[\(model.repositories.count) repository](inflect: true)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text(current.name)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 Spacer(minLength: 4)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
+        // The button menu style draws a pop-up button with the system dropdown chevron,
+        // making it clearly switchable.
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
     }
 }
 

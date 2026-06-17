@@ -16,19 +16,26 @@ struct DiffView: View {
             ContentUnavailableView("No Changes", systemImage: "doc.plaintext",
                                    description: Text("This file has no textual changes."))
         } else {
-            ScrollView([.vertical, .horizontal]) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(diff.hunks) { hunk in
-                        hunkHeader(hunk)
-                        ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                            DiffLineRow(line: line)
+            // Anchor the content to at least the column width so row backgrounds span the
+            // full pane (and only longer lines trigger horizontal scrolling). Without this
+            // the diff width tracks the longest line and changes per file.
+            GeometryReader { geo in
+                ScrollView([.vertical, .horizontal]) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(diff.hunks) { hunk in
+                            hunkHeader(hunk)
+                            ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
+                                DiffLineRow(line: line)
+                            }
                         }
                     }
+                    // Fill at least the viewport so short diffs pin to the top-leading
+                    // corner instead of centering, and long lines still scroll.
+                    .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
                 }
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
             }
-            .font(.system(.body, design: .monospaced))
-            .textSelection(.enabled)
         }
     }
 

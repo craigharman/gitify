@@ -515,8 +515,20 @@ private struct BranchTreeRow: View {
     var folderIcon = "folder"
     var depth: Int
 
-    private var indent: CGFloat { 10 + CGFloat(depth) * 14 }
+    // Leading inset of this row's first glyph (chevron for folders, branch icon for leaves).
+    // `base` lines the depth-0 chevron up with the sidebar's section icons above; each folder
+    // level adds `step`; leaves sit an extra `leafInset` past their folder so they read as
+    // clearly nested inside it.
+    private var indent: CGFloat {
+        let base: CGFloat = 4, step: CGFloat = 16, leafInset: CGFloat = 26
+        if node.ref != nil {
+            return depth == 0 ? base : base + CGFloat(depth - 1) * step + leafInset
+        }
+        return base + CGFloat(depth) * step
+    }
     private var expanded: Bool { !collapsed.contains(node.id) }
+    // Root rows match the main sidebar row pitch; nested rows stay tightly grouped.
+    private var vpad: CGFloat { depth == 0 ? 8 : 3 }
 
     var body: some View {
         if let ref = node.ref {
@@ -533,7 +545,7 @@ private struct BranchTreeRow: View {
                     Image(systemName: "checkmark").foregroundStyle(isSelected ? .white : .secondary)
                 }
             }
-            .padding(.vertical, 3)
+            .padding(.vertical, vpad)
             .padding(.leading, indent)
             .padding(.trailing, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -561,7 +573,7 @@ private struct BranchTreeRow: View {
                     Text(node.name).lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.vertical, 3)
+                .padding(.vertical, vpad)
                 .padding(.leading, indent)
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -570,11 +582,15 @@ private struct BranchTreeRow: View {
 
                 if expanded {
                     // Nested folders always use the plain folder icon (only the top is a cloud).
-                    ForEach(node.children) { child in
-                        BranchTreeRow(node: child, viewModel: viewModel, selection: $selection,
-                                      integrationSheet: $integrationSheet, collapsed: $collapsed,
-                                      isRemote: isRemote, folderIcon: "folder", depth: depth + 1)
+                    // A small top gap sets the children apart from the folder header.
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(node.children) { child in
+                            BranchTreeRow(node: child, viewModel: viewModel, selection: $selection,
+                                          integrationSheet: $integrationSheet, collapsed: $collapsed,
+                                          isRemote: isRemote, folderIcon: "folder", depth: depth + 1)
+                        }
                     }
+                    .padding(.top, 4)
                 }
             }
         }

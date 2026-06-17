@@ -367,10 +367,9 @@ private struct WorkspaceRail: View {
 
             Section("Local") {
                 // Branches with "/" in their name are grouped into expandable folders.
-                // Rendered as a single compact row (see BranchTreeList) so leaves sit close.
-                BranchTreeList(nodes: BranchNode.tree(from: viewModel.localBranches),
-                               viewModel: viewModel, selection: $section,
-                               integrationSheet: $integrationSheet)
+                ForEach(BranchNode.tree(from: viewModel.localBranches)) { node in
+                    BranchTreeNode(node: node, viewModel: viewModel, integrationSheet: $integrationSheet)
+                }
             }
 
             Section("Remote") {
@@ -381,9 +380,10 @@ private struct WorkspaceRail: View {
                     // Same tree as Local: the remote name (e.g. origin) is the top folder.
                     // Drop the symbolic "<remote>/HEAD" ref — it's a pointer, not a branch.
                     let remotes = viewModel.remoteBranches.filter { !$0.name.hasSuffix("/HEAD") }
-                    BranchTreeList(nodes: BranchNode.tree(from: remotes), viewModel: viewModel,
-                                   selection: $section, integrationSheet: $integrationSheet,
-                                   isRemote: true, folderIcon: "cloud")
+                    ForEach(BranchNode.tree(from: remotes)) { node in
+                        BranchTreeNode(node: node, viewModel: viewModel,
+                                       integrationSheet: $integrationSheet, isRemote: true, folderIcon: "cloud")
+                    }
                 }
             }
             Section("Tags") {
@@ -403,7 +403,7 @@ private struct WorkspaceRail: View {
                     Divider()
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.triangle.branch")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tint)
                         Text(branch.name).fontWeight(.medium)
                         if let ahead = branch.ahead, let behind = branch.behind, ahead + behind > 0 {
                             Text("↑\(ahead) ↓\(behind)").foregroundStyle(.secondary)
@@ -411,8 +411,7 @@ private struct WorkspaceRail: View {
                         Spacer()
                     }
                     .font(.caption)
-                    .padding(.leading, 30) // line the icon up with the sidebar row icons
-                    .padding(.trailing, 14)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                 }
                 .background(.bar)
@@ -471,80 +470,31 @@ struct BranchNode: Identifiable {
     }
 }
 
-/// The whole branch tree rendered as a single List row, so its leaf rows can be tighter
-/// than the fixed sidebar row metric while the rest of the sidebar keeps its native style.
-/// Selection is drawn manually (a capsule matching the sidebar highlight).
-private struct BranchTreeList: View {
-    let nodes: [BranchNode]
-    let viewModel: RepositoryViewModel
-    @Binding var selection: WorkspaceSection
-    @Binding var integrationSheet: IntegrationSheet?
-    var isRemote = false
-    var folderIcon = "folder"
-    // Expansion state lives here (not per-row) so toggling re-keys the row's identity below,
-    // forcing the NSTableView-backed sidebar to re-measure the row's height. Without that, the
-    // single tree row keeps its stale (expanded) height and the shrunken content sits centered.
-    @State private var collapsed: Set<String> = []
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(nodes) { node in
-                BranchTreeRow(node: node, viewModel: viewModel, selection: $selection,
-                              integrationSheet: $integrationSheet, collapsed: $collapsed,
-                              isRemote: isRemote, folderIcon: folderIcon, depth: 0)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .id(collapsed)
-        // The whole tree occupies one row; keep its own insets minimal so leaf spacing is
-        // driven by the rows below, not the list metric.
-        .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
-    }
-}
-
-/// One node within `BranchTreeList`: a selectable branch leaf, or an expandable folder.
-/// Tight vertical padding gives close leaf spacing; depth drives indentation.
-private struct BranchTreeRow: View {
+/// Renders a branch-tree node: a selectable branch leaf, or an expandable folder. Used for
+/// both Local and Remote branches (`isRemote` selects the right leaf menu and folder icon).
+private struct BranchTreeNode: View {
     let node: BranchNode
     let viewModel: RepositoryViewModel
-    @Binding var selection: WorkspaceSection
     @Binding var integrationSheet: IntegrationSheet?
-    @Binding var collapsed: Set<String>
     var isRemote = false
     var folderIcon = "folder"
-    var depth: Int
-
-    private var indent: CGFloat { 10 + CGFloat(depth) * 14 }
-    private var expanded: Bool { !collapsed.contains(node.id) }
+    @State private var expanded = true
 
     var body: some View {
         if let ref = node.ref {
-            let isSelected = selection == .branch(ref.name)
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.triangle.branch").frame(width: 16)
-                Text(node.name).lineLimit(1)
-                Spacer(minLength: 4)
-                if !isRemote, let ahead = ref.ahead, let behind = ref.behind, ahead + behind > 0 {
-                    Text("↑\(ahead) ↓\(behind)").font(.caption2)
-                        .foregroundStyle(isSelected ? .white : .secondary)
+            Label {
+                HStack {
+                    Text(node.name)
+                    Spacer()
+                    if !isRemote, let ahead = ref.ahead, let behind = ref.behind, ahead + behind > 0 {
+                        Text("↑\(ahead) ↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    if ref.isHead { Image(systemName: "checkmark").foregroundStyle(.secondary) }
                 }
-                if ref.isHead {
-                    Image(systemName: "checkmark").foregroundStyle(isSelected ? .white : .secondary)
-                }
+            } icon: {
+                Image(systemName: "arrow.triangle.branch")
             }
-            .padding(.vertical, 3)
-            .padding(.leading, indent)
-            .padding(.trailing, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .foregroundStyle(isSelected ? .white : .primary)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected ? Color.accentColor : .clear)
-                    .padding(.horizontal, 6)
-            )
-            .contentShape(Rectangle())
-            .onTapGesture { selection = .branch(ref.name) }
+            .tag(WorkspaceSection.branch(ref.name))
             .contextMenu {
                 if isRemote {
                     RemoteBranchMenu(branch: ref, viewModel: viewModel)
@@ -553,29 +503,14 @@ private struct BranchTreeRow: View {
                 }
             }
         } else {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 4) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2).foregroundStyle(.secondary).frame(width: 12)
-                    Image(systemName: folderIcon).frame(width: 16)
-                    Text(node.name).lineLimit(1)
-                    Spacer(minLength: 0)
+            DisclosureGroup(isExpanded: $expanded) {
+                // Nested folders always use the folder icon (only the remote root is a cloud).
+                ForEach(node.children) { child in
+                    BranchTreeNode(node: child, viewModel: viewModel,
+                                   integrationSheet: $integrationSheet, isRemote: isRemote)
                 }
-                .padding(.vertical, 3)
-                .padding(.leading, indent)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if expanded { collapsed.insert(node.id) } else { collapsed.remove(node.id) }
-                }
-
-                if expanded {
-                    // Nested folders always use the plain folder icon (only the top is a cloud).
-                    ForEach(node.children) { child in
-                        BranchTreeRow(node: child, viewModel: viewModel, selection: $selection,
-                                      integrationSheet: $integrationSheet, collapsed: $collapsed,
-                                      isRemote: isRemote, folderIcon: "folder", depth: depth + 1)
-                    }
-                }
+            } label: {
+                Label(node.name, systemImage: folderIcon)
             }
         }
     }

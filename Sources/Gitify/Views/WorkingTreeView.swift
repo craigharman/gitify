@@ -267,6 +267,7 @@ private struct CommitBox: View {
                     }
                 }
                 .keyboardShortcut(.return, modifiers: [.command])
+                .buttonStyle(.borderedProminent)
                 .disabled(!viewModel.canCommit)
             }
         }

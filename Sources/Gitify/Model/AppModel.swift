@@ -7,7 +7,12 @@ import GitKit
 @Observable
 final class AppModel {
     private(set) var repositories: [RepositoryRef]
-    var selectedRepositoryID: RepositoryRef.ID?
+    var selectedRepositoryID: RepositoryRef.ID? {
+        didSet { persistSelection() }
+    }
+
+    /// UserDefaults key for the last-opened repository, restored on launch.
+    private static let lastSelectedKey = "lastSelectedRepositoryID"
 
     // Clone progress state, surfaced as an overlay while a clone runs.
     private(set) var cloneProgress: String?
@@ -22,7 +27,22 @@ final class AppModel {
     init() {
         repositories = store.load()
         accounts = accountStore.load()
-        selectedRepositoryID = repositories.first?.id
+        // Restore the repository open in the previous session if it still exists,
+        // otherwise fall back to the first in the list.
+        let savedID = UserDefaults.standard.string(forKey: Self.lastSelectedKey)
+            .flatMap(UUID.init(uuidString:))
+        selectedRepositoryID = repositories.first { $0.id == savedID }?.id
+            ?? repositories.first?.id
+    }
+
+    /// Saves the current selection so it can be reopened on the next launch.
+    private func persistSelection() {
+        let defaults = UserDefaults.standard
+        if let id = selectedRepositoryID {
+            defaults.set(id.uuidString, forKey: Self.lastSelectedKey)
+        } else {
+            defaults.removeObject(forKey: Self.lastSelectedKey)
+        }
     }
 
     // MARK: - Hosting accounts

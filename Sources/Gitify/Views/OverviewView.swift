@@ -39,6 +39,7 @@ struct OverviewView: View {
                         Text("\(stat.lines)").font(.callout.monospacedDigit())
                             .frame(width: 70, alignment: .trailing).foregroundStyle(.secondary)
                     }
+                    .padding(.horizontal, 12)
                 }
             }
             .padding(.vertical, 4)
@@ -61,6 +62,7 @@ struct OverviewView: View {
                         Spacer()
                         Text("\(committer.commits)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
                     }
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                 }
             }
@@ -70,23 +72,17 @@ struct OverviewView: View {
     @ViewBuilder
     private var readmeSection: some View {
         GroupBox("README") {
-            if let readme = viewModel.readme, !readme.isEmpty {
-                Text(attributed(readme))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
-            } else {
-                Text("No README").foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
+            Group {
+                if let readme = viewModel.readme, !readme.isEmpty {
+                    MarkdownView(markdown: readme)
+                } else {
+                    Text("No README").foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
         }
-    }
-
-    /// Renders README markdown (inline formatting); falls back to plain text.
-    private func attributed(_ markdown: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
     }
 
     private var infoSection: some View {
@@ -130,6 +126,7 @@ struct OverviewView: View {
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
         }
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 }

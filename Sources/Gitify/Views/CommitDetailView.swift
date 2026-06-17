@@ -59,17 +59,10 @@ struct ChangesetDiffPane: View {
                 if loading {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List(selection: $selectedFile) {
-                        Section("\(changes.count) Changed File\(changes.count == 1 ? "" : "s")") {
-                            ForEach(changes) { change in
-                                ChangeRow(change: change).tag(change.path)
-                            }
-                        }
-                    }
-                    .listStyle(.inset)
+                    changeList
                 }
             }
-            .frame(minHeight: 140)
+            .frame(maxWidth: .infinity, minHeight: 140)
 
             Group {
                 if let fileDiff {
@@ -77,9 +70,10 @@ struct ChangesetDiffPane: View {
                 } else {
                     ContentUnavailableView("No File Selected", systemImage: "doc.text.magnifyingglass",
                                            description: Text("Select a changed file to view its diff."))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .frame(minHeight: 120)
+            .frame(maxWidth: .infinity, minHeight: 120)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: ref) { await load() }
@@ -87,6 +81,39 @@ struct ChangesetDiffPane: View {
             guard let path else { fileDiff = nil; return }
             Task { fileDiff = await viewModel.commitFileDiff(ref, path: path) }
         }
+    }
+
+    /// The changed-files list. Built from a ScrollView/LazyVStack (rather than `List`) so the
+    /// rows reliably span the full pane width regardless of the diff pane's content.
+    private var changeList: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                Text("\(changes.count) Changed File\(changes.count == 1 ? "" : "s")")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                ForEach(changes) { change in
+                    ChangeRow(change: change)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(selectedFile == change.path ? Color.accentColor.opacity(0.18) : .clear)
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedFile = change.path }
+                        .padding(.horizontal, 8)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func load() async {

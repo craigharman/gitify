@@ -366,21 +366,9 @@ private struct WorkspaceRail: View {
             }
 
             Section("Local") {
-                ForEach(viewModel.localBranches) { branch in
-                    Label {
-                        HStack {
-                            Text(branch.name)
-                            Spacer()
-                            if let ahead = branch.ahead, let behind = branch.behind, ahead + behind > 0 {
-                                Text("↑\(ahead) ↓\(behind)").font(.caption2).foregroundStyle(.secondary)
-                            }
-                            if branch.isHead { Image(systemName: "checkmark").foregroundStyle(.secondary) }
-                        }
-                    } icon: {
-                        Image(systemName: "arrow.triangle.branch")
-                    }
-                    .tag(WorkspaceSection.branch(branch.name))
-                    .contextMenu { branchMenu(branch) }
+                // Branches with "/" in their name are grouped into expandable folders.
+                ForEach(BranchNode.tree(from: viewModel.localBranches)) { node in
+                    BranchTreeNode(node: node, viewModel: viewModel, integrationSheet: $integrationSheet)
                 }
             }
 
@@ -441,8 +429,79 @@ private struct WorkspaceRail: View {
         }
     }
 
-    @ViewBuilder
-    private func branchMenu(_ branch: Ref) -> some View {
+}
+
+/// A node in the local-branch tree: either a leaf branch (`ref` set) or a folder grouping
+/// branches that share a "<prefix>/" path.
+struct BranchNode: Identifiable {
+    let id: String
+    let name: String
+    let ref: Ref?
+    let children: [BranchNode]
+
+    /// Builds a tree from branch names, splitting on "/" into folders.
+    static func tree(from refs: [Ref]) -> [BranchNode] {
+        typealias Item = (segments: [String], ref: Ref)
+        let items: [Item] = refs.map { ($0.name.split(separator: "/").map(String.init), $0) }
+
+        func make(_ items: [Item], prefix: String) -> [BranchNode] {
+            Dictionary(grouping: items, by: { $0.segments.first ?? "" })
+                .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+                .map { segment, group in
+                    let full = prefix.isEmpty ? segment : "\(prefix)/\(segment)"
+                    if group.count == 1, group[0].segments.count == 1 {
+                        return BranchNode(id: full, name: segment, ref: group[0].ref, children: [])
+                    }
+                    let deeper: [Item] = group.map { (Array($0.segments.dropFirst()), $0.ref) }
+                    return BranchNode(id: full, name: segment, ref: nil, children: make(deeper, prefix: full))
+                }
+        }
+        return make(items, prefix: "")
+    }
+}
+
+/// Renders a branch-tree node: a selectable branch leaf, or an expandable folder.
+private struct BranchTreeNode: View {
+    let node: BranchNode
+    let viewModel: RepositoryViewModel
+    @Binding var integrationSheet: IntegrationSheet?
+    @State private var expanded = true
+
+    var body: some View {
+        if let ref = node.ref {
+            Label {
+                HStack {
+                    Text(node.name)
+                    Spacer()
+                    if let ahead = ref.ahead, let behind = ref.behind, ahead + behind > 0 {
+                        Text("↑\(ahead) ↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                    }
+                    if ref.isHead { Image(systemName: "checkmark").foregroundStyle(.secondary) }
+                }
+            } icon: {
+                Image(systemName: "arrow.triangle.branch")
+            }
+            .tag(WorkspaceSection.branch(ref.name))
+            .contextMenu { BranchContextMenu(branch: ref, viewModel: viewModel, integrationSheet: $integrationSheet) }
+        } else {
+            DisclosureGroup(isExpanded: $expanded) {
+                ForEach(node.children) { child in
+                    BranchTreeNode(node: child, viewModel: viewModel, integrationSheet: $integrationSheet)
+                }
+            } label: {
+                Label(node.name, systemImage: "folder")
+            }
+        }
+    }
+}
+
+/// Right-click actions for a local branch.
+private struct BranchContextMenu: View {
+    let branch: Ref
+    let viewModel: RepositoryViewModel
+    @Binding var integrationSheet: IntegrationSheet?
+
+    var body: some View {
         if !branch.isHead {
             Button("Checkout") { Task { await viewModel.checkout(branch.name) } }
             Divider()

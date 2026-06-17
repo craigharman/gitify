@@ -29,7 +29,7 @@ struct HistoryView: View {
                     FilteredCommitList(commits: filtered, viewModel: viewModel, selection: $selection)
                 }
             }
-            .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minWidth: 380, idealWidth: 480, maxHeight: .infinity)
             Group {
                 if let selected = viewModel.commits.first(where: { $0.id == selection }) {
                     CommitDetailView(commit: selected, viewModel: viewModel)
@@ -38,7 +38,7 @@ struct HistoryView: View {
                     ContentUnavailableView("No Commit Selected", systemImage: "sidebar.right")
                 }
             }
-            .frame(minWidth: 320, maxHeight: .infinity)
+            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

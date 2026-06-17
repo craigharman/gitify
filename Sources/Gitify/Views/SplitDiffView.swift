@@ -44,17 +44,21 @@ struct SplitDiffView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ScrollView([.vertical, .horizontal]) {
+            // Vertical scroll only; each column is fixed at half the width and clips long
+            // lines (switch to Unified to scroll long lines horizontally). A fixed-height
+            // separator keeps rows from stretching.
+            let column = max((geo.size.width - 1) / 2, 80)
+            ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
                         HStack(spacing: 0) {
-                            side(row.left, isOld: true, width: geo.size.width / 2)
-                            Divider()
-                            side(row.right, isOld: false, width: geo.size.width / 2)
+                            side(row.left, isOld: true, width: column)
+                            Rectangle().fill(.separator).frame(width: 1)
+                            side(row.right, isOld: false, width: column)
                         }
+                        .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
             }
             .font(.system(.body, design: .monospaced))
             .textSelection(.enabled)
@@ -66,17 +70,19 @@ struct SplitDiffView: View {
             Text(line.flatMap { isOld ? $0.oldLineNumber : $0.newLineNumber }.map(String.init) ?? "")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.tertiary)
-                .frame(width: 44, alignment: .trailing)
+                .frame(width: 40, alignment: .trailing)
                 .padding(.trailing, 6)
             if let line {
                 Text(SyntaxHighlighter.highlight(line.content.isEmpty ? " " : line.content, language: language))
-                    .fixedSize(horizontal: true, vertical: false)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
             Spacer(minLength: 0)
         }
         .padding(.vertical, 0.5)
-        .frame(width: max(width, 120), alignment: .leading)
+        .frame(width: width, alignment: .leading)
         .background(background(line))
+        .clipped()
     }
 
     private func background(_ line: DiffLine?) -> Color {

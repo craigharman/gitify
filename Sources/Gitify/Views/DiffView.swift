@@ -24,9 +24,11 @@ struct DiffView: View {
         if diff.isBinary {
             ContentUnavailableView("Binary File", systemImage: "doc.badge.gearshape",
                                    description: Text("Binary content can't be displayed."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if diff.hunks.isEmpty {
             ContentUnavailableView("No Changes", systemImage: "doc.plaintext",
                                    description: Text("This file has no textual changes."))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             VStack(spacing: 0) {
                 header

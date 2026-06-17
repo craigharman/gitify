@@ -70,6 +70,7 @@ struct RepositoryWorkspaceView: View {
                 .help("Push current branch").disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
 
                 branchMenu
+                moreMenu
 
                 Button { Task { await viewModel.load() } } label: {
                     Image(systemName: "arrow.clockwise")
@@ -123,8 +124,6 @@ struct RepositoryWorkspaceView: View {
                 }
             }
             Button("New Branch…") { promptNewBranch() }
-            Button("Add Submodule…") { promptAddSubmodule() }
-            Button("Repository Settings…") { showSettings = true }
             Divider()
             Button("Merge into Current Branch…") {
                 if let target = others.first?.name { integrationSheet = .merge(target) }
@@ -134,7 +133,16 @@ struct RepositoryWorkspaceView: View {
                 if let target = others.first?.name { integrationSheet = .rebase(target) }
             }
             .disabled(others.isEmpty)
-            Divider()
+        } label: {
+            Label("Branch", systemImage: "arrow.triangle.branch")
+        }
+        .help("Branch actions")
+    }
+
+    /// Toolbar "⋯" menu: repository-level actions (settings, remotes, submodules).
+    @ViewBuilder
+    private var moreMenu: some View {
+        Menu {
             Menu("Remotes") {
                 Button("Add Remote…") { promptAddRemote() }
                 if !viewModel.remotes.isEmpty {
@@ -149,10 +157,13 @@ struct RepositoryWorkspaceView: View {
                     }
                 }
             }
+            Button("Add Submodule…") { promptAddSubmodule() }
+            Divider()
+            Button("Repository Settings…") { showSettings = true }
         } label: {
-            Label("Branch", systemImage: "arrow.triangle.branch")
+            Label("More", systemImage: "ellipsis.circle")
         }
-        .help("Branch actions")
+        .help("Repository actions")
     }
 
     private func promptAddRemote() {
@@ -375,6 +386,7 @@ private struct WorkspaceRail: View {
 
             Section("Remote") {
                 Label("Remote Branches", systemImage: "cloud").tag(WorkspaceSection.remotes)
+                    .contextMenu { remoteMenu }
             }
             Section("Tags") {
                 Label("Tags", systemImage: "tag").tag(WorkspaceSection.tags)
@@ -405,6 +417,26 @@ private struct WorkspaceRail: View {
                     .padding(.vertical, 8)
                 }
                 .background(.bar)
+            }
+        }
+    }
+
+    /// Context menu for the "Remote Branches" rail entry.
+    @ViewBuilder
+    private var remoteMenu: some View {
+        Button("Add Remote…") {
+            guard let name = Prompt.text(title: "Add Remote", message: "Remote name (e.g. origin).",
+                                         defaultValue: "origin", confirm: "Next") else { return }
+            guard let url = Prompt.text(title: "Remote URL", message: "Git URL for “\(name)”.",
+                                        confirm: "Add Remote") else { return }
+            Task { await viewModel.addRemote(name: name, url: url) }
+        }
+        if !viewModel.remotes.isEmpty {
+            Divider()
+            ForEach(viewModel.remotes) { remote in
+                Button("Remove “\(remote.name)”", role: .destructive) {
+                    Task { await viewModel.removeRemote(remote.name) }
+                }
             }
         }
     }

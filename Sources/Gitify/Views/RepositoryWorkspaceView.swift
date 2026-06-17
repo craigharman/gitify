@@ -32,7 +32,7 @@ struct RepositoryWorkspaceView: View {
         } detail: {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle("") // avoid a duplicate app-name title over the content
+                .navigationTitle(sectionTitle) // current view name, shown over the content
         }
         .background(TitlebarBrand())
         .toolbar {
@@ -82,6 +82,21 @@ struct RepositoryWorkspaceView: View {
                                      message: "Create and switch to a new branch from HEAD.",
                                      confirm: "Create") else { return }
         Task { await viewModel.createBranch(name: name, checkout: true) }
+    }
+
+    /// Name of the active section, shown as the title over the content area.
+    private var sectionTitle: String {
+        switch section {
+        case .overview: "Overview"
+        case .changes: "Working Tree"
+        case .history: "History"
+        case .branch(let name): name
+        case .remotes: "Remote Branches"
+        case .tags: "Tags"
+        case .stashes: "Stashes"
+        case .worktrees: "Worktrees"
+        case .reflog: "Reflog"
+        }
     }
 
     @ViewBuilder

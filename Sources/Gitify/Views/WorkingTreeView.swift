@@ -1,17 +1,25 @@
 import SwiftUI
 import GitKit
 
+/// Identifies a selectable row: a file path on either the staged or unstaged side (a file
+/// can appear on both when partially staged).
+struct FileSelection: Hashable {
+    let path: String
+    let staged: Bool
+}
+
 /// Working-tree / staging view (Screenshot 3): staged + unstaged file lists with a diff
 /// pane and a commit box.
 struct WorkingTreeView: View {
     @Bindable var viewModel: RepositoryViewModel
+    @State private var selection: FileSelection?
 
     var body: some View {
         if let status = viewModel.status {
             if status.hasChanges {
                 HSplitView {
                     VStack(spacing: 0) {
-                        fileLists(status)
+                        fileList(status)
                         Divider()
                         CommitBox(viewModel: viewModel)
                     }
@@ -21,6 +29,16 @@ struct WorkingTreeView: View {
                         .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // A List with native selection reliably drives file switching (plain
+                // onTapGesture in a ScrollView dropped taps after the lists restructured).
+                .onChange(of: selection) { _, sel in
+                    guard let sel, let file = status.files.first(where: { $0.path == sel.path }) else { return }
+                    Task { await viewModel.select(file, staged: sel.staged) }
+                }
+                .onChange(of: viewModel.selectedPath) { _, path in
+                    // Keep the highlight in sync when selection is reset by a reload.
+                    if path == nil { selection = nil }
+                }
             } else {
                 ContentUnavailableView("Clean Working Tree",
                                        systemImage: "checkmark.seal",
@@ -31,31 +49,38 @@ struct WorkingTreeView: View {
         }
     }
 
-    private func fileLists(_ status: WorkingTreeStatus) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                let staged = status.stagedFiles
-                if !staged.isEmpty {
+    private func fileList(_ status: WorkingTreeStatus) -> some View {
+        List(selection: $selection) {
+            let staged = status.stagedFiles
+            if !staged.isEmpty {
+                Section {
+                    ForEach(staged) { file in
+                        StagingFileRow(file: file, staged: true, viewModel: viewModel)
+                            .tag(FileSelection(path: file.path, staged: true))
+                    }
+                } header: {
                     sectionHeader("Staged", count: staged.count) {
                         Button("Unstage All") { Task { await unstageAll(staged) } }
                             .buttonStyle(.borderless).font(.caption)
                     }
-                    ForEach(staged) { file in
-                        StagingFileRow(file: file, staged: true, viewModel: viewModel)
-                    }
                 }
-                let unstaged = status.unstagedFiles
-                if !unstaged.isEmpty {
+            }
+            let unstaged = status.unstagedFiles
+            if !unstaged.isEmpty {
+                Section {
+                    ForEach(unstaged) { file in
+                        StagingFileRow(file: file, staged: false, viewModel: viewModel)
+                            .tag(FileSelection(path: file.path, staged: false))
+                    }
+                } header: {
                     sectionHeader("Changes", count: unstaged.count) {
                         Button("Stage All") { Task { await viewModel.stageAll() } }
                             .buttonStyle(.borderless).font(.caption)
                     }
-                    ForEach(unstaged) { file in
-                        StagingFileRow(file: file, staged: false, viewModel: viewModel)
-                    }
                 }
             }
         }
+        .listStyle(.inset)
     }
 
     @ViewBuilder
@@ -76,7 +101,6 @@ struct WorkingTreeView: View {
             Spacer()
             action()
         }
-        .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 2)
     }
 
     private func unstageAll(_ files: [FileStatus]) async {
@@ -84,16 +108,13 @@ struct WorkingTreeView: View {
     }
 }
 
-/// A selectable file row with a hover stage/unstage button.
+/// A file row with a hover stage/unstage button and context menu. Selection/clicks are
+/// handled by the enclosing `List`.
 private struct StagingFileRow: View {
     let file: FileStatus
     let staged: Bool
     @Bindable var viewModel: RepositoryViewModel
     @State private var hovering = false
-
-    private var isSelected: Bool {
-        viewModel.selectedPath == file.path && viewModel.selectedStaged == staged
-    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -114,10 +135,8 @@ private struct StagingFileRow: View {
                 .help(staged ? "Unstage" : "Stage")
             }
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(isSelected ? Color.accentColor.opacity(0.2) : .clear)
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .onTapGesture { Task { await viewModel.select(file, staged: staged) } }
         .onHover { hovering = $0 }
         .contextMenu {
             if staged {

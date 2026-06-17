@@ -16,22 +16,23 @@ struct DiffView: View {
             ContentUnavailableView("No Changes", systemImage: "doc.plaintext",
                                    description: Text("This file has no textual changes."))
         } else {
-            // Anchor the content to at least the column width so row backgrounds span the
-            // full pane (and only longer lines trigger horizontal scrolling). Without this
-            // the diff width tracks the longest line and changes per file.
+            // Each row is a single, non-wrapping line whose width is at least the viewport,
+            // so backgrounds span the full pane, long lines scroll horizontally, and (with
+            // uniform row heights) the lazy stack lays out without gaps.
             GeometryReader { geo in
                 ScrollView([.vertical, .horizontal]) {
-                    LazyVStack(alignment: .leading, spacing: 0) {
+                    // A plain VStack (not Lazy) renders every row, so multi-hunk diffs lay
+                    // out without the blank gaps lazy height-estimation produced.
+                    VStack(alignment: .leading, spacing: 0) {
                         ForEach(diff.hunks) { hunk in
-                            hunkHeader(hunk)
+                            hunkHeader(hunk, width: geo.size.width)
                             ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                                DiffLineRow(line: line)
+                                DiffLineRow(line: line, width: geo.size.width)
                             }
                         }
                     }
-                    // Fill at least the viewport so short diffs pin to the top-leading
-                    // corner instead of centering, and long lines still scroll.
-                    .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
+                    // Top-align short diffs instead of centering them.
+                    .frame(minHeight: geo.size.height, alignment: .topLeading)
                 }
                 .font(.system(.body, design: .monospaced))
                 .textSelection(.enabled)
@@ -39,27 +40,29 @@ struct DiffView: View {
         }
     }
 
-    private func hunkHeader(_ hunk: DiffHunk) -> some View {
-        HStack(spacing: 8) {
-            Text(hunk.header)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
-            if let onApplyHunk, !diff.isNew {
-                Button(actionLabel) { onApplyHunk(hunk) }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
+    private func hunkHeader(_ hunk: DiffHunk, width: CGFloat) -> some View {
+        Text(hunk.header)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .frame(minWidth: width, alignment: .leading)
+            .background(Color.accentColor.opacity(0.08))
+            // The stage/unstage action is pinned to the viewport's trailing edge.
+            .overlay(alignment: .trailing) {
+                if let onApplyHunk, !diff.isNew {
+                    Button(actionLabel) { onApplyHunk(hunk) }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                        .padding(.trailing, 10)
+                }
             }
-        }
-        .padding(.horizontal, 8).padding(.vertical, 3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.08))
     }
 }
 
 private struct DiffLineRow: View {
     let line: DiffLine
+    let width: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
@@ -69,9 +72,10 @@ private struct DiffLineRow: View {
                 .frame(width: 14)
                 .foregroundStyle(.secondary)
             Text(line.content.isEmpty ? " " : line.content)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false) // never wrap; scroll instead
         }
         .padding(.vertical, 0.5)
+        .frame(minWidth: width, alignment: .leading)
         .background(background)
     }
 

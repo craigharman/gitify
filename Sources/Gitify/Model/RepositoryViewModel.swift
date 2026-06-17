@@ -16,6 +16,7 @@ final class RepositoryViewModel {
     private(set) var stashes: [Stash] = []
     private(set) var remotes: [GitRemote] = []
     private(set) var reflog: [ReflogEntry] = []
+    private(set) var submodules: [Submodule] = []
     /// An interrupted merge/rebase in progress, if any.
     private(set) var operation: RepositoryOperation?
 
@@ -81,6 +82,7 @@ final class RepositoryViewModel {
             self.stashes = try await stashes
             self.remotes = (try? await remotes) ?? []
             self.reflog = (try? await reflog) ?? []
+            self.submodules = await service.submodules()
             self.operation = await service.currentOperation()
             let page = try await firstPage
             self.commits = page.commits
@@ -130,6 +132,13 @@ final class RepositoryViewModel {
         guard let diff = currentDiff else { return }
         await mutate { try await $0.applyHunk(fileHeader: diff.header, hunkText: hunk.rawText,
                                               reverse: self.selectedStaged) }
+    }
+
+    /// Stages/unstages only the selected lines of a hunk (indices into `hunk.lines`).
+    func applyLines(_ hunk: DiffHunk, _ selected: Set<Int>) async {
+        guard let diff = currentDiff, !selected.isEmpty else { return }
+        await mutate { try await $0.applyHunkLines(fileHeader: diff.header, hunk: hunk,
+                                                   selected: selected, reverse: self.selectedStaged) }
     }
 
     func stage(_ file: FileStatus) async { await mutate { try await $0.stage(paths: [file.path]) } }
@@ -281,6 +290,13 @@ final class RepositoryViewModel {
         await mutate { try await $0.resolveConflict(path: file.path, useOurs: useOurs) }
     }
     func markResolved(_ file: FileStatus) async { await stage(file) }
+    func fileContents(_ path: String) async -> String? {
+        guard let service else { return nil }
+        return await service.fileContents(path: path)
+    }
+    func resolveFile(path: String, contents: String) async {
+        await mutate { try await $0.resolveFile(path: path, contents: contents) }
+    }
 
     func addWorktree(path: String, branch: String?, create: Bool) async {
         await perform { try await $0.addWorktree(path: path, branch: branch, createBranch: create) }
@@ -320,6 +336,16 @@ final class RepositoryViewModel {
     }
     func addRemote(name: String, url: String) async { await perform { try await $0.addRemote(name: name, url: url) } }
     func removeRemote(_ name: String) async { await perform { try await $0.removeRemote(name: name) } }
+    func updateSubmodules(path: String?) async {
+        await runOperation(path == nil ? "Updating Submodules" : "Updating Submodule") { service, progress in
+            try await service.updateSubmodules(path: path)
+        }
+    }
+    func addSubmodule(url: String, path: String) async {
+        await runOperation("Adding Submodule") { service, progress in
+            try await service.addSubmodule(url: url, path: path)
+        }
+    }
 
     // MARK: - Merge & rebase
 
@@ -423,6 +449,7 @@ final class RepositoryViewModel {
         stashes = (try? await service.stashes()) ?? stashes
         remotes = (try? await service.remotes()) ?? remotes
         reflog = (try? await service.reflog(limit: 200)) ?? reflog
+        submodules = await service.submodules()
         operation = await service.currentOperation()
         statsLoaded = false // recompute overview stats on next visit
         if let page = try? await service.log(skip: 0, limit: 150) {

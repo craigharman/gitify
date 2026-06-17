@@ -1,12 +1,24 @@
 import SwiftUI
 import GitKit
 
+/// Identifies a selectable diff line: its hunk id and index within that hunk.
+private struct LineRef: Hashable { let hunk: Int; let index: Int }
+
 /// Renders a `FileDiff` as a unified diff with line numbers and add/remove coloring.
-/// When `onApplyHunk` is provided, each hunk header gets a stage/unstage button.
+/// When `onApplyHunk` is provided, each hunk header gets a stage/unstage button; when
+/// `onApplyLines` is provided, individual added/removed lines can be selected and staged.
 struct DiffView: View {
     let diff: FileDiff
     var actionLabel: String = "Stage Hunk"
+    var lineActionLabel: String = "Stage Lines"
     var onApplyHunk: ((DiffHunk) -> Void)? = nil
+    var onApplyLines: ((DiffHunk, Set<Int>) -> Void)? = nil
+
+    @State private var selected: Set<LineRef> = []
+    @State private var mode: DiffMode = .unified
+
+    private enum DiffMode: String, CaseIterable { case unified = "Unified", split = "Split" }
+    private var language: String { (diff.path as NSString).pathExtension.lowercased() }
 
     var body: some View {
         if diff.isBinary {
@@ -16,28 +28,75 @@ struct DiffView: View {
             ContentUnavailableView("No Changes", systemImage: "doc.plaintext",
                                    description: Text("This file has no textual changes."))
         } else {
-            // Each row is a single, non-wrapping line whose width is at least the viewport,
-            // so backgrounds span the full pane, long lines scroll horizontally, and (with
-            // uniform row heights) the lazy stack lays out without gaps.
-            GeometryReader { geo in
-                ScrollView([.vertical, .horizontal]) {
-                    // A plain VStack (not Lazy) renders every row, so multi-hunk diffs lay
-                    // out without the blank gaps lazy height-estimation produced.
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(diff.hunks) { hunk in
-                            hunkHeader(hunk, width: geo.size.width)
-                            ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
-                                DiffLineRow(line: line, width: geo.size.width)
-                            }
-                        }
-                    }
-                    // Top-align short diffs instead of centering them.
-                    .frame(minHeight: geo.size.height, alignment: .topLeading)
+            VStack(spacing: 0) {
+                header
+                if mode == .unified {
+                    diffBody
+                } else {
+                    SplitDiffView(diff: diff, language: language)
                 }
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
             }
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Picker("", selection: $mode) {
+                ForEach(DiffMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            Spacer()
+            if onApplyLines != nil, !selected.isEmpty, mode == .unified {
+                Text("\(selected.count) selected").font(.caption).foregroundStyle(.secondary)
+                Button("Clear") { selected = [] }.buttonStyle(.borderless).font(.caption)
+                Button(lineActionLabel) { applySelected() }.controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.bar)
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(.separator), alignment: .bottom)
+    }
+
+    private var diffBody: some View {
+        // Each row is a single, non-wrapping line whose width is at least the viewport,
+        // so backgrounds span the full pane and long lines scroll horizontally.
+        GeometryReader { geo in
+            ScrollView([.vertical, .horizontal]) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(diff.hunks) { hunk in
+                        hunkHeader(hunk, width: geo.size.width)
+                        ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
+                            let ref = LineRef(hunk: hunk.id, index: index)
+                            DiffLineRow(
+                                line: line, width: geo.size.width, language: language,
+                                selectable: onApplyLines != nil && !diff.isNew && line.kind != .context,
+                                isSelected: selected.contains(ref),
+                                onToggle: { toggle(ref) })
+                        }
+                    }
+                }
+                .frame(minHeight: geo.size.height, alignment: .topLeading)
+            }
+            .font(.system(.body, design: .monospaced))
+            .textSelection(.enabled)
+        }
+    }
+
+    private func toggle(_ ref: LineRef) {
+        if selected.contains(ref) { selected.remove(ref) } else { selected.insert(ref) }
+    }
+
+    private func applySelected() {
+        guard let onApplyLines else { return }
+        // Group selected lines by hunk, then apply each hunk's selection.
+        let byHunk = Dictionary(grouping: selected, by: \.hunk)
+        for (hunkId, refs) in byHunk {
+            guard let hunk = diff.hunks.first(where: { $0.id == hunkId }) else { continue }
+            onApplyLines(hunk, Set(refs.map(\.index)))
+        }
+        selected = []
     }
 
     private func hunkHeader(_ hunk: DiffHunk, width: CGFloat) -> some View {
@@ -63,20 +122,32 @@ struct DiffView: View {
 private struct DiffLineRow: View {
     let line: DiffLine
     let width: CGFloat
+    var language: String = ""
+    var selectable: Bool = false
+    var isSelected: Bool = false
+    var onToggle: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 0) {
+            if selectable {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .font(.caption2)
+                    .frame(width: 16)
+            }
             gutter(line.oldLineNumber)
             gutter(line.newLineNumber)
             Text(marker)
                 .frame(width: 14)
                 .foregroundStyle(.secondary)
-            Text(line.content.isEmpty ? " " : line.content)
+            Text(SyntaxHighlighter.highlight(line.content.isEmpty ? " " : line.content, language: language))
                 .fixedSize(horizontal: true, vertical: false) // never wrap; scroll instead
         }
         .padding(.vertical, 0.5)
         .frame(minWidth: width, alignment: .leading)
-        .background(background)
+        .background(isSelected ? Color.accentColor.opacity(0.22) : background)
+        .contentShape(Rectangle())
+        .onTapGesture { if selectable { onToggle?() } }
     }
 
     private var marker: String {

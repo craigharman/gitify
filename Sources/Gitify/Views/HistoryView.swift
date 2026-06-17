@@ -6,11 +6,30 @@ import GitKit
 struct HistoryView: View {
     let viewModel: RepositoryViewModel
     @State private var selection: Commit.ID?
+    @State private var search = ""
+
+    /// Commits matching the filter (by summary, author, or short SHA).
+    private var filtered: [Commit] {
+        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !query.isEmpty else { return viewModel.commits }
+        return viewModel.commits.filter {
+            $0.summary.lowercased().contains(query)
+                || $0.authorName.lowercased().contains(query)
+                || $0.id.hasPrefix(query)
+        }
+    }
 
     var body: some View {
         HSplitView {
-            CommitGraphList(viewModel: viewModel, selection: $selection)
-                .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                SearchField(text: $search, prompt: "Filter commits")
+                if search.isEmpty {
+                    CommitGraphList(viewModel: viewModel, selection: $selection)
+                } else {
+                    FilteredCommitList(commits: filtered, viewModel: viewModel, selection: $selection)
+                }
+            }
+            .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
             Group {
                 if let selected = viewModel.commits.first(where: { $0.id == selection }) {
                     CommitDetailView(commit: selected, viewModel: viewModel)
@@ -22,6 +41,28 @@ struct HistoryView: View {
             .frame(minWidth: 320, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// A flat (graph-less) commit list used while filtering.
+private struct FilteredCommitList: View {
+    let commits: [Commit]
+    let viewModel: RepositoryViewModel
+    @Binding var selection: Commit.ID?
+
+    var body: some View {
+        if commits.isEmpty {
+            ContentUnavailableView.search
+        } else {
+            List(selection: $selection) {
+                ForEach(commits) { commit in
+                    CommitRowContent(commit: commit)
+                        .tag(commit.id)
+                        .contextMenu { CommitContextMenu(commit: commit, viewModel: viewModel) }
+                }
+            }
+            .listStyle(.inset)
+        }
     }
 }
 

@@ -12,6 +12,7 @@ enum WorkspaceSection: Hashable {
     case stashes
     case worktrees
     case reflog
+    case submodules
 }
 
 /// A repository's workspace: an inner section rail plus the section's content.
@@ -122,6 +123,7 @@ struct RepositoryWorkspaceView: View {
                 }
             }
             Button("New Branch…") { promptNewBranch() }
+            Button("Add Submodule…") { promptAddSubmodule() }
             Button("Repository Settings…") { showSettings = true }
             Divider()
             Button("Merge into Current Branch…") {
@@ -168,6 +170,15 @@ struct RepositoryWorkspaceView: View {
         Task { await viewModel.createBranch(name: name, checkout: true) }
     }
 
+    private func promptAddSubmodule() {
+        guard let url = Prompt.text(title: "Add Submodule",
+                                    message: "Git URL of the submodule repository.", confirm: "Next") else { return }
+        guard let path = Prompt.text(title: "Submodule Path",
+                                     message: "Where to place it, relative to the repo root (e.g. libs/foo).",
+                                     confirm: "Add") else { return }
+        Task { await viewModel.addSubmodule(url: url, path: path) }
+    }
+
     /// Name of the active section, shown as the title over the content area.
     private var sectionTitle: String {
         switch section {
@@ -180,6 +191,7 @@ struct RepositoryWorkspaceView: View {
         case .stashes: "Stashes"
         case .worktrees: "Worktrees"
         case .reflog: "Reflog"
+        case .submodules: "Submodules"
         }
     }
 
@@ -202,6 +214,8 @@ struct RepositoryWorkspaceView: View {
             WorktreesView(viewModel: viewModel)
         case .reflog:
             ReflogView(viewModel: viewModel)
+        case .submodules:
+            SubmodulesView(viewModel: viewModel)
         }
     }
 }
@@ -210,6 +224,7 @@ struct RepositoryWorkspaceView: View {
 private struct RepoSwitcher: View {
     let model: AppModel
     let current: RepositoryRef
+    @State private var showAccounts = false
 
     var body: some View {
         Menu {
@@ -227,6 +242,8 @@ private struct RepoSwitcher: View {
             Divider()
             Button("Add Existing Repository…") { Task { await model.promptToAddRepository() } }
             Button("Clone Repository…") { Task { await model.promptToClone() } }
+            Divider()
+            Button("Accounts…") { showAccounts = true }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "shippingbox.fill")
@@ -247,6 +264,7 @@ private struct RepoSwitcher: View {
         .padding(.horizontal, 10)
         .padding(.top, 8)
         .padding(.bottom, 6)
+        .sheet(isPresented: $showAccounts) { AccountsView(model: model) }
     }
 }
 
@@ -324,6 +342,16 @@ private struct WorkspaceRail: View {
                     }
                 } icon: { Image(systemName: "tray.full") }
                 .tag(WorkspaceSection.stashes)
+                if !viewModel.submodules.isEmpty {
+                    Label {
+                        HStack {
+                            Text("Submodules")
+                            Spacer()
+                            CountBadge(count: viewModel.submodules.count)
+                        }
+                    } icon: { Image(systemName: "shippingbox.and.arrow.backward") }
+                    .tag(WorkspaceSection.submodules)
+                }
             }
 
             Section("Local") {

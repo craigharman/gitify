@@ -44,19 +44,28 @@ Implemented:
   graph layout, branch/tag/stash/worktree management, merge (with conflict preview) / rebase /
   cherry-pick / revert / reset / abort, conflict resolution (ours/theirs/mark-resolved),
   reflog, remotes (add/remove, push tags, force-push, delete remote branch), config get/set,
-  repository stats (lines-by-language, top committers, README), and streamed network ops
+  repository stats (lines-by-language, top committers, README), submodules, per-line
+  staging, conflict-marker parsing, and streamed network ops
   (fetch/pull/push/pull-rebase/clone). Argument-injection
   hardened (`--` separators, leading-dash rejection, restricted `GIT_ALLOW_PROTOCOL`).
-  Covered by a 92-check integration suite.
+  Covered by a 138-check integration suite.
 - App: repository manager with a sidebar repo-switcher (add / **clone-from-URL** with
-  progress), overview, a full working-tree/staging view (stage/unstage/discard, **per-hunk
-  staging**, unified diff, commit + amend), a **lane-based commit graph** with ref pills and
-  inspector, **fetch/pull/push** with a live-progress overlay, branch checkout/create/rename/
-  delete, tag create/delete, stash push/apply/pop/drop, worktree add/remove, reflog view,
-  **FSEvents auto-refresh**, and a **Check for Updates** menu.
+  progress), overview (stats + rendered README), a full working-tree/staging view
+  (stage/unstage/discard, **per-hunk and per-line staging**, **unified + split diffs with
+  syntax highlighting**, commit + amend), a **lane-based commit graph** with an Inspect-Changes
+  panel, **commit context menu** (cherry-pick/revert/reset/branch/tag), **fetch/pull/push**
+  with a live-progress overlay, branch/tag/stash/worktree management, **merge/rebase dialogs**,
+  a **3-way conflict editor**, submodules, reflog, **search/filter** across lists,
+  **GitHub/GitLab accounts** (token-based repo browsing + clone), **FSEvents auto-refresh**,
+  and a **Check for Updates** menu.
 - Packaging: `scripts/package.sh` builds a (optionally signed + notarized) `.dmg`. See
   `docs/RELEASING.md`.
 
-Planned:
-- Line-level (intra-hunk) staging
-- Sparkle integration for silent signed auto-updates (see `docs/RELEASING.md`)
+Needs your credentials / external setup (see `docs/RELEASING.md`):
+- **Developer-ID notarization** — `package.sh` is ready; supply `SIGN_IDENTITY` + a notary
+  profile.
+- **Sparkle** silent auto-updates — needs an EdDSA key pair, a hosted appcast, and the
+  embedded framework. The in-app GitHub-release **Check for Updates** covers basic updating
+  until then.
+- **Full OAuth accounts + pull-request review** — the current accounts use personal access
+  tokens; OAuth needs a registered app.

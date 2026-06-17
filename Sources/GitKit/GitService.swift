@@ -65,6 +65,9 @@ public protocol GitService: Sendable {
     /// `fileHeader` + `hunkText` as a patch to the index.
     func applyHunk(fileHeader: String, hunkText: String, reverse: Bool) async throws
 
+    /// Stages/unstages only the selected lines (indices into `hunk.lines`) of a hunk.
+    func applyHunkLines(fileHeader: String, hunk: DiffHunk, selected: Set<Int>, reverse: Bool) async throws
+
     /// Creates a commit with `message`. When `amend` is true, rewrites the last commit.
     func commit(message: String, amend: Bool) async throws
 
@@ -205,11 +208,26 @@ public protocol GitService: Sendable {
     /// Sets a git config value, locally or `--global`.
     func setConfigValue(_ key: String, _ value: String, global: Bool) async throws
 
+    /// Configured submodules and their checkout state.
+    func submodules() async -> [Submodule]
+
+    /// Initializes and updates submodules (all, or just `path`).
+    func updateSubmodules(path: String?) async throws
+
+    /// Adds a new submodule from `url` at `path`.
+    func addSubmodule(url: String, path: String) async throws
+
     /// Files with unresolved merge conflicts.
     func conflictedFiles() async throws -> [String]
 
     /// Resolves a conflicted file by taking our side (`useOurs`) or theirs, then staging it.
     func resolveConflict(path: String, useOurs: Bool) async throws
+
+    /// The working-tree contents of `path` (including any conflict markers).
+    func fileContents(path: String) async -> String?
+
+    /// Writes `contents` to `path` and stages it (marking a conflict resolved).
+    func resolveFile(path: String, contents: String) async throws
 }
 
 public extension GitService {

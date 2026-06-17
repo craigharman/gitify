@@ -44,6 +44,10 @@ enum DiffParser {
                 continue
             }
 
+            // A truly empty line in a hunk body is the artifact of the diff's final
+            // newline (real blank context lines are a single space), so ignore it.
+            if rawLine.isEmpty, hunkHeader != nil { continue }
+
             // Lines before the first hunk are the verbatim patch header.
             if hunkHeader == nil {
                 headerLines.append(rawLine)
@@ -68,10 +72,6 @@ enum DiffParser {
             } else if hunkHeader != nil {
                 // Inside a hunk: classify by the leading marker.
                 guard let marker = rawLine.first else {
-                    // Blank line inside a hunk represents an empty context line.
-                    hunkLines.append(DiffLine(kind: .context, content: "",
-                                              oldLineNumber: oldNo, newLineNumber: newNo))
-                    oldNo += 1; newNo += 1
                     continue
                 }
                 let content = String(rawLine.dropFirst())

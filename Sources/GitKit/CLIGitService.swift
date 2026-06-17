@@ -175,18 +175,60 @@ public struct CLIGitService: GitService {
     }
 
     public func applyHunk(fileHeader: String, hunkText: String, reverse: Bool) async throws {
-        // Assemble a minimal, newline-terminated patch and apply it to the index.
         var patch = fileHeader
         if !patch.hasSuffix("\n") { patch += "\n" }
         patch += hunkText
         if !patch.hasSuffix("\n") { patch += "\n" }
+        try await applyPatch(patch, reverse: reverse)
+    }
 
+    public func applyHunkLines(fileHeader: String, hunk: DiffHunk,
+                               selected: Set<Int>, reverse: Bool) async throws {
+        // Build a partial-hunk patch: keep context, include selected +/- lines, drop
+        // unselected additions, and turn unselected deletions back into context. git's
+        // `--recount` recomputes the line counts so the header need not be exact.
+        var body = ""
+        var oldCount = 0, newCount = 0
+        var changed = false
+        for (i, line) in hunk.lines.enumerated() {
+            switch line.kind {
+            case .context:
+                body += " \(line.content)\n"; oldCount += 1; newCount += 1
+            case .addition:
+                if selected.contains(i) { body += "+\(line.content)\n"; newCount += 1; changed = true }
+            case .deletion:
+                if selected.contains(i) {
+                    body += "-\(line.content)\n"; oldCount += 1; changed = true
+                } else {
+                    body += " \(line.content)\n"; oldCount += 1; newCount += 1
+                }
+            }
+        }
+        guard changed else { return }
+
+        // Drop the `index <blob>..<blob>` line: for a partial patch the new blob hash won't
+        // match, and git would reject the patch.
+        var patch = Self.strippingIndexLine(fileHeader)
+        if !patch.hasSuffix("\n") { patch += "\n" }
+        patch += "@@ -\(hunk.oldStart),\(oldCount) +\(hunk.newStart),\(newCount) @@\n"
+        patch += body
+        try await applyPatch(patch, reverse: reverse, recount: true)
+    }
+
+    private static func strippingIndexLine(_ header: String) -> String {
+        header.split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.hasPrefix("index ") }
+            .joined(separator: "\n")
+    }
+
+    private func applyPatch(_ patch: String, reverse: Bool, recount: Bool = false) async throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("gitify-\(UUID().uuidString).patch")
         try patch.write(to: tmp, atomically: true, encoding: .utf8)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
         var args = ["apply", "--cached", "--whitespace=nowarn"]
+        if recount { args.append("--recount") }
         if reverse { args.append("--reverse") }
         args.append(tmp.path)
         try await runner.run(args)
@@ -316,6 +358,23 @@ public struct CLIGitService: GitService {
         try await runner.run(args)
     }
 
+    public func submodules() async -> [Submodule] {
+        guard let output = try? await runner.runString(["submodule", "status"]) else { return [] }
+        return SubmoduleParser.parse(output)
+    }
+
+    public func updateSubmodules(path: String?) async throws {
+        var args = ["submodule", "update", "--init", "--recursive"]
+        if let path { args.append(contentsOf: ["--", try Self.requireSafe(path, "path")]) }
+        try await runner.runStreaming(args)
+    }
+
+    public func addSubmodule(url: String, path: String) async throws {
+        try Self.requireSafe(url, "submodule URL")
+        try Self.requireSafe(path, "submodule path")
+        try await runner.runStreaming(["submodule", "add", "--", url, path])
+    }
+
     public func conflictedFiles() async throws -> [String] {
         let output = try await runner.run(["diff", "--name-only", "--diff-filter=U", "-z"])
         return String(decoding: output, as: UTF8.self)
@@ -325,6 +384,16 @@ public struct CLIGitService: GitService {
     public func resolveConflict(path: String, useOurs: Bool) async throws {
         try Self.requireSafe(path, "path")
         try await runner.run(["checkout", useOurs ? "--ours" : "--theirs", "--", path])
+        try await runner.run(["add", "--", path])
+    }
+
+    public func fileContents(path: String) async -> String? {
+        try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+
+    public func resolveFile(path: String, contents: String) async throws {
+        try Self.requireSafe(path, "path")
+        try contents.write(to: root.appendingPathComponent(path), atomically: true, encoding: .utf8)
         try await runner.run(["add", "--", path])
     }
 

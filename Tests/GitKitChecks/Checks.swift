@@ -28,12 +28,63 @@ enum Checks {
         await test("remote add/remove, push tags, delete remote branch", remoteExtras)
         await test("flag-smuggling arguments are rejected", argumentInjection)
         await test("hunk staging stages one hunk at a time", hunkStaging)
+        await test("line staging stages only selected lines", lineStaging)
         await test("commit changes list files, counts, and renames", commitChanges)
         await test("merge preview detects clean vs conflicting", mergePreview)
         await test("merge and rebase update history; abort recovers", mergeRebase)
         await test("cherry-pick, revert, and reset move/copy commits", commitOps)
         await test("repository stats: languages, committers, README", repoStats)
         await test("stash branch, config get/set, conflict resolution", stashConfigConflict)
+        await test("submodules are listed and parsed", submodules)
+        await test("conflict markers parse; resolved file stages", conflictEditor)
+    }
+
+    static func conflictEditor() async throws {
+        // Parse a conflicted file's markers.
+        let content = "top\n<<<<<<< HEAD\nours line\n=======\ntheirs line\n>>>>>>> feature\nbottom\n"
+        let segments = ConflictParser.parse(content)
+        await expectEqual(segments.count, 3, "text + conflict + text")
+        if case let .conflict(ours, theirs, _) = segments[1] {
+            await expectEqual(ours, "ours line", "ours parsed")
+            await expectEqual(theirs, "theirs line", "theirs parsed")
+        } else {
+            await expect(false, "middle segment is a conflict")
+        }
+
+        // Resolve a real conflict by writing the chosen content and staging it.
+        let repo = try await twoBranchRepo(conflicting: true)
+        let service = try await repo.service()
+        _ = try? await service.merge(branch: "feature", squash: false, noFastForward: false,
+                                     noCommit: false, skipHooks: false)
+        let raw = try await require(await service.fileContents(path: "f.txt"))
+        await expect(raw.contains("<<<<<<<"), "working file has conflict markers")
+        try await service.resolveFile(path: "f.txt", contents: "a\nRESOLVED\nc\n")
+        await expect(try await service.conflictedFiles().isEmpty, "file resolved and staged")
+    }
+
+    static func submodules() async throws {
+        // A source repo to embed as a submodule.
+        let source = try await TestRepository()
+        try await source.commit("sub init", file: "a.txt", contents: "hi\n")
+
+        let parent = try await TestRepository()
+        try await parent.commit("root", file: "r.txt", contents: "root\n")
+        try await parent.git("-c", "protocol.file.allow=always", "submodule", "add", "-q",
+                             source.url.path, "libs/sub")
+        try await parent.git("commit", "-q", "-m", "add submodule")
+
+        let subs = await (try await parent.service()).submodules()
+        await expectEqual(subs.count, 1, "one submodule")
+        await expectEqual(subs.first?.path, "libs/sub", "submodule path")
+        await expect(subs.first?.isInitialized == true, "submodule initialized")
+        await expect((subs.first?.sha.count ?? 0) >= 7, "submodule sha captured")
+
+        // Add a second submodule.
+        let source2 = try await TestRepository()
+        try await source2.commit("sub2", file: "b.txt", contents: "yo\n")
+        try await parent.git("-c", "protocol.file.allow=always", "submodule", "add", "--",
+                             source2.url.path, "libs/sub2")
+        await expectEqual(await (try await parent.service()).submodules().count, 2, "second submodule added")
     }
 
     static func stashConfigConflict() async throws {
@@ -157,6 +208,29 @@ enum Checks {
         await expect(!fileDiff.hunks.isEmpty, "commit file diff has hunks")
     }
 
+    static func lineStaging() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "a\nb\nc\n")
+        // Two additions within one hunk; stage only the first.
+        try repo.write("f.txt", "a\nADDED1\nb\nADDED2\nc\n")
+        let service = try await repo.service()
+
+        let diff = try await service.diff(path: "f.txt", staged: false)
+        let hunk = try await require(diff.hunks.first)
+        // Pick the line index of the first addition (ADDED1).
+        let firstAdd = try await require(hunk.lines.firstIndex { $0.kind == .addition && $0.content == "ADDED1" })
+        try await service.applyHunkLines(fileHeader: diff.header, hunk: hunk, selected: [firstAdd], reverse: false)
+
+        let staged = try await service.diff(path: "f.txt", staged: true)
+        let stagedAdds = staged.hunks.flatMap(\.lines).filter { $0.kind == .addition }.map(\.content)
+        await expect(stagedAdds.contains("ADDED1"), "ADDED1 staged")
+        await expect(!stagedAdds.contains("ADDED2"), "ADDED2 not staged")
+
+        let unstaged = try await service.diff(path: "f.txt", staged: false)
+        let unstagedAdds = unstaged.hunks.flatMap(\.lines).filter { $0.kind == .addition }.map(\.content)
+        await expect(unstagedAdds.contains("ADDED2"), "ADDED2 still unstaged")
+    }
+
     static func mergePreview() async throws {
         let cleanRepo = try await twoBranchRepo(conflicting: false)
         let clean = try await cleanRepo.service()
@@ -177,7 +251,7 @@ enum Checks {
                                 noCommit: false, skipHooks: false)
         let head = try await service.log(limit: 1, revisions: ["HEAD"])
         await expect(head.commits.first?.isMerge == true, "merge commit created")
-        await expect(try await service.currentOperation() == nil, "no operation pending after clean merge")
+        await expect(await service.currentOperation() == nil, "no operation pending after clean merge")
 
         // Conflicting merge leaves a merge in progress; abort recovers.
         let conflictRepo = try await twoBranchRepo(conflicting: true)
@@ -186,9 +260,9 @@ enum Checks {
             try await cService.merge(branch: "feature", squash: false, noFastForward: false,
                                      noCommit: false, skipHooks: false)
         }
-        await expect(try await cService.currentOperation() == .merge, "merge in progress detected")
+        await expect(await cService.currentOperation() == .merge, "merge in progress detected")
         try await cService.abortMerge()
-        await expect(try await cService.currentOperation() == nil, "merge aborted")
+        await expect(await cService.currentOperation() == nil, "merge aborted")
         await expect(try await cService.status().hasChanges == false, "working tree clean after abort")
 
         // Rebase feature onto an advanced main (clean).

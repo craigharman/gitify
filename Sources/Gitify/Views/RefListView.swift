@@ -7,6 +7,12 @@ struct RefListView: View {
     let refs: [Ref]
     let symbol: String
     let viewModel: RepositoryViewModel
+    @State private var search = ""
+
+    private var filtered: [Ref] {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? refs : refs.filter { $0.name.lowercased().contains(q) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,7 +20,8 @@ struct RefListView: View {
                 ContentUnavailableView(title, systemImage: symbol,
                                        description: Text("Nothing here yet."))
             } else {
-                List(refs) { ref in
+                SearchField(text: $search, prompt: "Filter \(title.lowercased())")
+                List(filtered) { ref in
                     HStack(spacing: 8) {
                         Image(systemName: symbol).foregroundStyle(.secondary)
                         Text(ref.name)

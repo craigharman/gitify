@@ -8,17 +8,31 @@ struct FileSelection: Hashable {
     let staged: Bool
 }
 
+/// Identifies a file to open in the conflict editor (Identifiable for `.sheet(item:)`).
+private struct ConflictTarget: Identifiable {
+    let id = UUID()
+    let path: String
+}
+
 /// Working-tree / staging view (Screenshot 3): staged + unstaged file lists with a diff
 /// pane and a commit box.
 struct WorkingTreeView: View {
     @Bindable var viewModel: RepositoryViewModel
     @State private var selection: FileSelection?
+    @State private var search = ""
+    @State private var conflictTarget: ConflictTarget?
+
+    private func matches(_ file: FileStatus) -> Bool {
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty || file.path.lowercased().contains(q)
+    }
 
     var body: some View {
         if let status = viewModel.status {
             if status.hasChanges {
                 HSplitView {
                     VStack(spacing: 0) {
+                        SearchField(text: $search, prompt: "Filter files")
                         fileList(status)
                         Divider()
                         CommitBox(viewModel: viewModel)
@@ -39,6 +53,9 @@ struct WorkingTreeView: View {
                     // Keep the highlight in sync when selection is reset by a reload.
                     if path == nil { selection = nil }
                 }
+                .sheet(item: $conflictTarget) { target in
+                    ConflictEditorView(viewModel: viewModel, path: target.path)
+                }
             } else {
                 ContentUnavailableView("Clean Working Tree",
                                        systemImage: "checkmark.seal",
@@ -51,11 +68,12 @@ struct WorkingTreeView: View {
 
     private func fileList(_ status: WorkingTreeStatus) -> some View {
         List(selection: $selection) {
-            let staged = status.stagedFiles
+            let staged = status.stagedFiles.filter(matches)
             if !staged.isEmpty {
                 Section {
                     ForEach(staged) { file in
-                        StagingFileRow(file: file, staged: true, viewModel: viewModel)
+                        StagingFileRow(file: file, staged: true, viewModel: viewModel,
+                                       onResolveConflict: { conflictTarget = ConflictTarget(path: $0) })
                             .tag(FileSelection(path: file.path, staged: true))
                     }
                 } header: {
@@ -65,11 +83,12 @@ struct WorkingTreeView: View {
                     }
                 }
             }
-            let unstaged = status.unstagedFiles
+            let unstaged = status.unstagedFiles.filter(matches)
             if !unstaged.isEmpty {
                 Section {
                     ForEach(unstaged) { file in
-                        StagingFileRow(file: file, staged: false, viewModel: viewModel)
+                        StagingFileRow(file: file, staged: false, viewModel: viewModel,
+                                       onResolveConflict: { conflictTarget = ConflictTarget(path: $0) })
                             .tag(FileSelection(path: file.path, staged: false))
                     }
                 } header: {
@@ -88,7 +107,9 @@ struct WorkingTreeView: View {
         if let diff = viewModel.currentDiff {
             DiffView(diff: diff,
                      actionLabel: viewModel.selectedStaged ? "Unstage Hunk" : "Stage Hunk",
-                     onApplyHunk: { hunk in Task { await viewModel.applyHunk(hunk) } })
+                     lineActionLabel: viewModel.selectedStaged ? "Unstage Lines" : "Stage Lines",
+                     onApplyHunk: { hunk in Task { await viewModel.applyHunk(hunk) } },
+                     onApplyLines: { hunk, lines in Task { await viewModel.applyLines(hunk, lines) } })
         } else {
             ContentUnavailableView("No File Selected", systemImage: "doc.text.magnifyingglass",
                                    description: Text("Select a file to view its changes."))
@@ -114,6 +135,7 @@ private struct StagingFileRow: View {
     let file: FileStatus
     let staged: Bool
     @Bindable var viewModel: RepositoryViewModel
+    var onResolveConflict: ((String) -> Void)? = nil
     @State private var hovering = false
 
     var body: some View {
@@ -140,6 +162,8 @@ private struct StagingFileRow: View {
         .onHover { hovering = $0 }
         .contextMenu {
             if file.isConflicted {
+                Button("Resolve in Editor…") { onResolveConflict?(file.path) }
+                Divider()
                 Button("Take Ours (current branch)") { Task { await viewModel.resolveConflict(file, useOurs: true) } }
                 Button("Take Theirs (incoming)") { Task { await viewModel.resolveConflict(file, useOurs: false) } }
                 Button("Mark Resolved") { Task { await viewModel.markResolved(file) } }

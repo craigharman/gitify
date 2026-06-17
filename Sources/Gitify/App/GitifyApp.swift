@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 @main
 struct GitifyApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
 
     var body: some Scene {
@@ -24,6 +26,17 @@ struct GitifyApp: App {
                 }
                 .keyboardShortcut("o", modifiers: [.command])
             }
+        }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Ensure the Dock/app icon is set even when launched outside the .app bundle
+        // (e.g. `swift run`), where Info.plist's CFBundleIconFile doesn't apply.
+        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+           let image = NSImage(contentsOf: url) {
+            NSApplication.shared.applicationIconImage = image
         }
     }
 }

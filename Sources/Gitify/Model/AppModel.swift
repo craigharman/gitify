@@ -13,11 +13,72 @@ final class AppModel {
     private(set) var cloneProgress: String?
     var isCloning: Bool { cloneProgress != nil }
 
+    // Hosting accounts (GitHub/GitLab) authenticated by personal access token.
+    private(set) var accounts: [HostingAccount]
+
     private let store = RepositoryStore()
+    private let accountStore = AccountStore()
 
     init() {
         repositories = store.load()
+        accounts = accountStore.load()
         selectedRepositoryID = repositories.first?.id
+    }
+
+    // MARK: - Hosting accounts
+
+    /// Validates a token, stores it in the Keychain, and adds the account.
+    func addAccount(provider: HostingAccount.Provider, token: String) async throws {
+        let login = try await HostingClient.validate(provider: provider, token: token)
+        let account = HostingAccount(provider: provider, login: login)
+        Keychain.set(token, account: account.id)
+        if !accounts.contains(account) {
+            accounts.append(account)
+            accountStore.save(accounts)
+        }
+    }
+
+    func removeAccount(_ account: HostingAccount) {
+        Keychain.delete(account: account.id)
+        accounts.removeAll { $0.id == account.id }
+        accountStore.save(accounts)
+    }
+
+    func repositories(for account: HostingAccount) async throws -> [HostedRepo] {
+        guard let token = Keychain.get(account: account.id) else {
+            throw HostingClient.ClientError(message: "No stored token for \(account.login).")
+        }
+        return try await HostingClient.repositories(provider: account.provider, token: token)
+    }
+
+    /// Clones a hosted repository using an authenticated HTTPS URL.
+    func clone(_ repo: HostedRepo, account: HostingAccount) async {
+        guard !isCloning else { return }
+        guard let parent = Prompt.chooseDirectory(prompt: "Clone Here",
+                                                  message: "Choose where to clone \(repo.fullName)") else { return }
+        let token = Keychain.get(account: account.id)
+        let url = Self.authenticatedURL(repo.cloneURL, provider: account.provider, token: token)
+        cloneProgress = "Starting…"
+        defer { cloneProgress = nil }
+        let progress: @Sendable (String) -> Void = { [weak self] line in
+            Task { @MainActor in self?.cloneProgress = line }
+        }
+        do {
+            let dest = try await CLIGitService.clone(url: url, into: parent,
+                                                     name: repo.fullName.split(separator: "/").last.map(String.init),
+                                                     onProgress: progress)
+            await add(directory: dest)
+        } catch {
+            presentError("Clone failed: \(error)")
+        }
+    }
+
+    /// Embeds the token into an HTTPS clone URL so private repos can be cloned non-interactively.
+    private static func authenticatedURL(_ clone: String, provider: HostingAccount.Provider, token: String?) -> String {
+        guard let token, clone.hasPrefix("https://") else { return clone }
+        let body = String(clone.dropFirst("https://".count))
+        let user = provider == .github ? token : "oauth2:\(token)"
+        return "https://\(user)@\(body)"
     }
 
     var selectedRepository: RepositoryRef? {

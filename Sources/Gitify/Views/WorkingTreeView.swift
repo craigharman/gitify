@@ -18,7 +18,10 @@ private struct ConflictTarget: Identifiable {
 /// pane and a commit box.
 struct WorkingTreeView: View {
     @Bindable var viewModel: RepositoryViewModel
-    @State private var selection: FileSelection?
+    /// The set of currently selected files (supports multi-select via cmd/shift-click).
+    @State private var selection: Set<FileSelection> = []
+    /// The last file that was clicked (anchor for shift-click range selection).
+    @State private var lastClicked: FileSelection?
     @State private var search = ""
     @State private var conflictTarget: ConflictTarget?
 
@@ -43,15 +46,14 @@ struct WorkingTreeView: View {
                         .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // A List with native selection reliably drives file switching (plain
-                // onTapGesture in a ScrollView dropped taps after the lists restructured).
-                .onChange(of: selection) { _, sel in
-                    guard let sel, let file = status.files.first(where: { $0.path == sel.path }) else { return }
-                    Task { await viewModel.select(file, staged: sel.staged) }
-                }
                 .onChange(of: viewModel.selectedPath) { _, path in
-                    // Keep the highlight in sync when selection is reset by a reload.
-                    if path == nil { selection = nil }
+                    if path == nil {
+                        selection = []
+                        lastClicked = nil
+                    }
+                    // Prune selection for files that no longer exist after a mutation.
+                    let paths = Set((viewModel.status?.files ?? []).map(\.path))
+                    selection = selection.filter { paths.contains($0.path) }
                 }
                 .sheet(item: $conflictTarget) { target in
                     ConflictEditorView(viewModel: viewModel, path: target.path)
@@ -66,40 +68,142 @@ struct WorkingTreeView: View {
         }
     }
 
+    // MARK: - Row click handling
+
+    /// Handles a click on a file row, applying cmd/shift modifier logic.
+    fileprivate func handleRowClick(
+        _ clicked: FileSelection,
+        file: FileStatus,
+        orderedSelections: [FileSelection],
+        modifiers: NSEvent.ModifierFlags
+    ) {
+        if modifiers.contains(.command) {
+            // Cmd-click: toggle this file in the selection.
+            if selection.contains(clicked) {
+                selection.remove(clicked)
+            } else {
+                selection.insert(clicked)
+            }
+            lastClicked = clicked
+            // Load diff for the clicked file.
+            Task { await viewModel.select(file, staged: clicked.staged) }
+        } else if modifiers.contains(.shift), let anchor = lastClicked {
+            // Shift-click: select range from last-clicked to this file.
+            if let startIdx = orderedSelections.firstIndex(of: anchor),
+               let endIdx = orderedSelections.firstIndex(of: clicked) {
+                let range = min(startIdx, endIdx)...max(startIdx, endIdx)
+                let rangeSelections = Set(orderedSelections[range])
+                selection.formUnion(rangeSelections)
+            } else {
+                selection.insert(clicked)
+            }
+            lastClicked = clicked
+            Task { await viewModel.select(file, staged: clicked.staged) }
+        } else {
+            // Plain click: single-select.
+            selection = [clicked]
+            lastClicked = clicked
+            Task { await viewModel.select(file, staged: clicked.staged) }
+        }
+    }
+
+    // MARK: - Selected-file helpers
+
+    private func selectedUnstagedFiles(in status: WorkingTreeStatus) -> [FileStatus] {
+        let paths = Set(selection.filter { !$0.staged }.map(\.path))
+        guard !paths.isEmpty else { return [] }
+        return status.unstagedFiles.filter { paths.contains($0.path) }
+    }
+
+    private func selectedStagedFiles(in status: WorkingTreeStatus) -> [FileStatus] {
+        let paths = Set(selection.filter { $0.staged }.map(\.path))
+        guard !paths.isEmpty else { return [] }
+        return status.stagedFiles.filter { paths.contains($0.path) }
+    }
+
+    private func confirmDiscardSelected(in status: WorkingTreeStatus) {
+        let files = selectedUnstagedFiles(in: status)
+        guard !files.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = files.count == 1
+            ? "Discard changes to \(URL(fileURLWithPath: files[0].path).lastPathComponent)?"
+            : "Discard changes to \(files.count) files?"
+        alert.informativeText = "This cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            Task { await viewModel.discardFiles(files) }
+        }
+    }
+
+    // MARK: - File list
+
     private func fileList(_ status: WorkingTreeStatus) -> some View {
-        List(selection: $selection) {
-            let staged = status.stagedFiles.filter(matches)
-            if !staged.isEmpty {
+        // Build a flat ordered list of FileSelection entries for shift-click range computation.
+        let stagedFiles = status.stagedFiles.filter(matches)
+        let unstagedFiles = status.unstagedFiles.filter(matches)
+        let orderedSelections: [FileSelection] =
+            stagedFiles.map { FileSelection(path: $0.path, staged: true) } +
+            unstagedFiles.map { FileSelection(path: $0.path, staged: false) }
+
+        return List {
+            if !stagedFiles.isEmpty {
                 Section {
-                    ForEach(staged) { file in
+                    ForEach(stagedFiles) { file in
                         StagingFileRow(file: file, staged: true, viewModel: viewModel,
-                                       onResolveConflict: { conflictTarget = ConflictTarget(path: $0) })
-                            .tag(FileSelection(path: file.path, staged: true))
+                                       isSelected: selection.contains(FileSelection(path: file.path, staged: true)),
+                                       onResolveConflict: { conflictTarget = ConflictTarget(path: $0) },
+                                       onClick: { mods in
+                                           handleRowClick(FileSelection(path: file.path, staged: true),
+                                                          file: file, orderedSelections: orderedSelections, modifiers: mods)
+                                       })
                     }
                 } header: {
-                    sectionHeader("Staged", count: staged.count) {
-                        Button("Unstage All") { Task { await unstageAll(staged) } }
-                            .buttonStyle(.borderless).font(.caption)
+                    let checkedStaged = selectedStagedFiles(in: status)
+                    sectionHeader("Staged", count: stagedFiles.count) {
+                        HStack(spacing: 8) {
+                            if checkedStaged.count > 1 {
+                                Button("Unstage Selected") { Task { await viewModel.unstageFiles(checkedStaged) } }
+                                    .buttonStyle(.borderless).font(.caption)
+                            }
+                            Button("Unstage All") { Task { await viewModel.unstageFiles(stagedFiles) } }
+                                .buttonStyle(.borderless).font(.caption)
+                        }
                     }
                 }
             }
-            let unstaged = status.unstagedFiles.filter(matches)
-            if !unstaged.isEmpty {
+            if !unstagedFiles.isEmpty {
                 Section {
-                    ForEach(unstaged) { file in
+                    ForEach(unstagedFiles) { file in
                         StagingFileRow(file: file, staged: false, viewModel: viewModel,
-                                       onResolveConflict: { conflictTarget = ConflictTarget(path: $0) })
-                            .tag(FileSelection(path: file.path, staged: false))
+                                       isSelected: selection.contains(FileSelection(path: file.path, staged: false)),
+                                       onResolveConflict: { conflictTarget = ConflictTarget(path: $0) },
+                                       onClick: { mods in
+                                           handleRowClick(FileSelection(path: file.path, staged: false),
+                                                          file: file, orderedSelections: orderedSelections, modifiers: mods)
+                                       })
                     }
                 } header: {
-                    sectionHeader("Changes", count: unstaged.count) {
-                        Button("Stage All") { Task { await viewModel.stageAll() } }
-                            .buttonStyle(.borderless).font(.caption)
+                    let discardable = selectedUnstagedFiles(in: status)
+                    sectionHeader("Changes", count: unstagedFiles.count) {
+                        HStack(spacing: 8) {
+                            if discardable.count > 1 {
+                                Button("Discard") { confirmDiscardSelected(in: status) }
+                                    .buttonStyle(.borderless).font(.caption)
+                                    .foregroundStyle(.red)
+                                Button("Stage Selected") { Task { await viewModel.stageFiles(discardable) } }
+                                    .buttonStyle(.borderless).font(.caption)
+                            }
+                            Button("Stage All") { Task { await viewModel.stageAll() } }
+                                .buttonStyle(.borderless).font(.caption)
+                        }
                     }
                 }
             }
         }
         .listStyle(.inset)
+        .environment(\.defaultMinListRowHeight, 0) // let rows size naturally
     }
 
     private func sectionHeader(_ title: String, count: Int, @ViewBuilder action: () -> some View) -> some View {
@@ -110,9 +214,6 @@ struct WorkingTreeView: View {
         }
     }
 
-    private func unstageAll(_ files: [FileStatus]) async {
-        for file in files { await viewModel.unstage(file) }
-    }
 }
 
 /// The diff side of the working-tree split: the selected file's diff, or a placeholder.
@@ -141,13 +242,20 @@ private struct DiffPane: View {
     }
 }
 
-/// A file row with a hover stage/unstage button and context menu. Selection/clicks are
-/// handled by the enclosing `List`.
+/// Reads the current keyboard modifier flags at the moment of a gesture.
+@MainActor private func currentModifiers() -> NSEvent.ModifierFlags {
+    NSApp.currentEvent?.modifierFlags.intersection([.command, .shift]) ?? []
+}
+
+/// A file row with a hover stage/unstage button and context menu. Clicking the row selects
+/// it; cmd-click adds/removes from the selection; shift-click selects a range.
 private struct StagingFileRow: View {
     let file: FileStatus
     let staged: Bool
     @Bindable var viewModel: RepositoryViewModel
+    let isSelected: Bool
     var onResolveConflict: ((String) -> Void)? = nil
+    var onClick: ((NSEvent.ModifierFlags) -> Void)? = nil
     @State private var hovering = false
 
     var body: some View {
@@ -170,8 +278,10 @@ private struct StagingFileRow: View {
             }
         }
         .padding(.vertical, 2)
+        .listRowBackground(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .onTapGesture { onClick?(currentModifiers()) }
         .contextMenu {
             if file.isConflicted {
                 Button("Resolve in Editor…") { onResolveConflict?(file.path) }

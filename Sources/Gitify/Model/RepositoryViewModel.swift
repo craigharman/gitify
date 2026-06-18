@@ -157,6 +157,21 @@ final class RepositoryViewModel {
         await mutate { try await $0.discard(paths: [file.path]) }
     }
 
+    func discardFiles(_ files: [FileStatus]) async {
+        guard !files.isEmpty else { return }
+        await mutate { try await $0.discard(paths: files.map(\.path)) }
+    }
+
+    func stageFiles(_ files: [FileStatus]) async {
+        guard !files.isEmpty else { return }
+        await mutate { try await $0.stage(paths: files.map(\.path)) }
+    }
+
+    func unstageFiles(_ files: [FileStatus]) async {
+        guard !files.isEmpty else { return }
+        await mutate { try await $0.unstage(paths: files.map(\.path)) }
+    }
+
     var canCommit: Bool {
         !commitMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !isCommitting

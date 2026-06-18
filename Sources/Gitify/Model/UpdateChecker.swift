@@ -5,17 +5,28 @@ import AppKit
 ///
 /// This avoids embedding the Sparkle framework (which needs a hosted appcast, EdDSA signing
 /// keys, and Xcode build phases — see docs/RELEASING.md). It checks the latest release tag
-/// and, when newer, offers to open the download page.
+/// and, when newer, offers to download the DMG directly.
 enum UpdateChecker {
     /// `owner/repo` whose GitHub releases are checked. Update for the real repository.
     static let repository = "craigharman/gitify"
 
+    private struct Asset: Decodable {
+        let name: String
+        let browserDownloadURL: String
+        enum CodingKeys: String, CodingKey {
+            case name
+            case browserDownloadURL = "browser_download_url"
+        }
+    }
+
     private struct Release: Decodable {
         let tagName: String
         let htmlURL: String
+        let assets: [Asset]
         enum CodingKeys: String, CodingKey {
             case tagName = "tag_name"
             case htmlURL = "html_url"
+            case assets
         }
     }
 
@@ -38,14 +49,15 @@ enum UpdateChecker {
             let latest = release.tagName.trimmingCharacters(in: CharacterSet(charactersIn: "vV "))
 
             if isNewer(latest, than: currentVersion) {
-                presentUpdateAvailable(version: latest, urlString: release.htmlURL)
+                let dmgAsset = release.assets.first { $0.name.hasSuffix(".dmg") }
+                presentUpdateAvailable(version: latest, dmgAsset: dmgAsset, releaseURL: release.htmlURL)
             } else if userInitiated {
-                presentInfo(title: "You’re Up to Date",
+                presentInfo(title: "You're Up to Date",
                             message: "Gitify \(currentVersion) is the latest version.")
             }
         } catch {
             if userInitiated {
-                presentInfo(title: "Couldn’t Check for Updates",
+                presentInfo(title: "Couldn't Check for Updates",
                             message: error.localizedDescription)
             }
         }
@@ -57,14 +69,56 @@ enum UpdateChecker {
     }
 
     @MainActor
-    private static func presentUpdateAvailable(version: String, urlString: String) {
+    private static func presentUpdateAvailable(version: String, dmgAsset: Asset?, releaseURL: String) {
         let alert = NSAlert()
         alert.messageText = "Update Available"
         alert.informativeText = "Gitify \(version) is available (you have \(currentVersion))."
         alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Later")
-        if alert.runModal() == .alertFirstButtonReturn, let url = URL(string: urlString) {
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        if let asset = dmgAsset, let url = URL(string: asset.browserDownloadURL) {
+            downloadDMG(from: url, named: asset.name)
+        } else if let url = URL(string: releaseURL) {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// Downloads the DMG to ~/Downloads and reveals it in Finder on completion.
+    private static func downloadDMG(from url: URL, named filename: String) {
+        let task = URLSession.shared.downloadTask(with: url) { tempURL, _, error in
+            DispatchQueue.main.async {
+                guard let tempURL, error == nil else {
+                    presentInfo(title: "Download Failed",
+                                message: error?.localizedDescription ?? "Unknown error.")
+                    return
+                }
+                let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
+                let destination = downloads.appendingPathComponent(filename)
+                do {
+                    if FileManager.default.fileExists(atPath: destination.path) {
+                        try FileManager.default.removeItem(at: destination)
+                    }
+                    try FileManager.default.moveItem(at: tempURL, to: destination)
+                    presentDownloadComplete(file: destination)
+                } catch {
+                    presentInfo(title: "Download Failed",
+                                message: "Could not save to Downloads: \(error.localizedDescription)")
+                }
+            }
+        }
+        task.resume()
+    }
+
+    @MainActor
+    private static func presentDownloadComplete(file: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Download Complete"
+        alert.informativeText = "Gitify has been downloaded to your Downloads folder."
+        alert.addButton(withTitle: "Show in Finder")
+        alert.addButton(withTitle: "OK")
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([file])
         }
     }
 

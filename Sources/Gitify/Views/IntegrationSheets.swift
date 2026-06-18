@@ -15,6 +15,7 @@ struct MergeSheet: View {
     @State private var noCommit = false
     @State private var skipHooks = false
     @State private var deleteSource = false
+    @State private var pushAfterMerge = false
     @State private var preview: MergePreview?
     @State private var loadingPreview = false
 
@@ -66,6 +67,11 @@ struct MergeSheet: View {
                            "Removes the local branch once it has been merged in.",
                            isOn: $deleteSource, disabled: noCommit)
                 }
+                if !viewModel.remotes.isEmpty {
+                    option("Push After Merge",
+                           "Automatically push the result to the remote after merging.",
+                           isOn: $pushAfterMerge, disabled: noCommit)
+                }
             }
             .padding(.leading, FormMetrics.contentInset) // align checkboxes under the fields
 
@@ -78,7 +84,8 @@ struct MergeSheet: View {
                         await viewModel.merge(source: source, into: target, squash: squash,
                                               noFastForward: noFastForward, noCommit: noCommit,
                                               skipHooks: skipHooks,
-                                              deleteSource: deleteSource && sourceIsLocal)
+                                              deleteSource: deleteSource && sourceIsLocal,
+                                              pushAfterMerge: pushAfterMerge && !noCommit)
                         dismiss()
                     }
                 }

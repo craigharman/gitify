@@ -473,7 +473,8 @@ final class RepositoryViewModel {
     /// (e.g. a feature into main) without manually switching first. On a clean merge, optionally
     /// deletes the now-merged `source` branch.
     func merge(source: String, into target: String, squash: Bool, noFastForward: Bool,
-               noCommit: Bool, skipHooks: Bool, deleteSource: Bool) async {
+               noCommit: Bool, skipHooks: Bool, deleteSource: Bool,
+               pushAfterMerge: Bool = false) async {
         // Park the deletion intent before attempting the merge so it survives a conflict: a
         // conflicting merge throws below and is finished later by a manual commit, which calls
         // finalizePendingMergeDeletion(). Don't delete when stopping before commit — nothing
@@ -493,7 +494,10 @@ final class RepositoryViewModel {
         // If the merge didn't leave a conflicted merge in progress (it finalized cleanly above,
         // or failed for a non-conflict reason), drop any stale intent so it can't leak into a
         // later unrelated commit.
-        if operation != .merge { pendingMergeSourceToDelete = nil }
+        if operation != .merge {
+            pendingMergeSourceToDelete = nil
+            if pushAfterMerge { await push() }
+        }
     }
 
     /// Deletes the branch a "delete on merge" request targeted, once the merge has actually

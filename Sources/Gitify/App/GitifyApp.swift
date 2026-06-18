@@ -14,6 +14,9 @@ struct GitifyApp: App {
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
+        Settings {
+            AppSettingsView()
+        }
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") {

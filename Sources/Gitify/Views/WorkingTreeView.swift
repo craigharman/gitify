@@ -277,7 +277,7 @@ private struct StagingFileRow: View {
             if !isMulti {
                 Button("Open in Terminal") { viewModel.openInTerminal(file) }
             }
-            Button(isMulti ? "Open \(targets.count) in Editor" : "Open in Default Editor") {
+            Button(isMulti ? "Open \(targets.count) in Editor" : "Open in Editor") {
                 viewModel.openInDefaultEditor(targets)
             }
 

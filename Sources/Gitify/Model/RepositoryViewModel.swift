@@ -193,16 +193,23 @@ final class RepositoryViewModel {
     }
 
     func openInDefaultEditor(_ files: [FileStatus]) {
-        for file in files {
-            NSWorkspace.shared.open(ref.url.appendingPathComponent(file.path))
+        let urls = files.map { ref.url.appendingPathComponent($0.path) }
+        if let bundleID = AppDefaults.editorBundleID,
+           let appURL = AppDefaults.appURL(for: bundleID) {
+            let config = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.open(urls, withApplicationAt: appURL, configuration: config)
+        } else {
+            for url in urls { NSWorkspace.shared.open(url) }
         }
     }
 
     func openInTerminal(_ file: FileStatus) {
         let dir = ref.url.appendingPathComponent(file.path).deletingLastPathComponent()
-        let terminalURL = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+        let bundleID = AppDefaults.terminalBundleID
+        let appURL = AppDefaults.appURL(for: bundleID)
+            ?? URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
         let config = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.open([dir], withApplicationAt: terminalURL, configuration: config)
+        NSWorkspace.shared.open([dir], withApplicationAt: appURL, configuration: config)
     }
 
     func stageFiles(_ files: [FileStatus]) async {

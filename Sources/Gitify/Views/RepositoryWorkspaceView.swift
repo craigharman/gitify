@@ -41,9 +41,21 @@ struct RepositoryWorkspaceView: View {
             WorkspaceRail(viewModel: viewModel, section: $section, integrationSheet: $integrationSheet)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
         } detail: {
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle(sectionTitle) // current view name, shown over the content
+            VStack(spacing: 0) {
+                if let operation = viewModel.operation {
+                    OperationBanner(operation: operation) {
+                        Task { await viewModel.abortOperation() }
+                    }
+                }
+                if let error = viewModel.loadError {
+                    ErrorBanner(message: error) {
+                        viewModel.dismissError()
+                    }
+                }
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .navigationTitle(sectionTitle)
         }
         .onChange(of: section) { _, new in
             if let data = try? JSONEncoder().encode(new) {
@@ -99,18 +111,6 @@ struct RepositoryWorkspaceView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsSheet(viewModel: viewModel) }
         .task { await viewModel.load() }
-        .overlay(alignment: .top) {
-            VStack(spacing: 0) {
-                if let operation = viewModel.operation {
-                    OperationBanner(operation: operation) {
-                        Task { await viewModel.abortOperation() }
-                    }
-                }
-                if let error = viewModel.loadError {
-                    ErrorBanner(message: error)
-                }
-            }
-        }
         .overlay {
             if viewModel.isBusy {
                 OperationOverlay(title: viewModel.operationTitle ?? "Working",
@@ -685,13 +685,24 @@ struct CountBadge: View {
 
 private struct ErrorBanner: View {
     let message: String
+    let onDismiss: () -> Void
+
     var body: some View {
-        Text(message)
-            .font(.callout)
-            .padding(8)
-            .frame(maxWidth: .infinity)
-            .background(.red.opacity(0.15))
-            .overlay(Rectangle().frame(height: 1).foregroundStyle(.red.opacity(0.3)), alignment: .bottom)
+        HStack(spacing: 10) {
+            Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+            Text(message)
+            Spacer()
+            Button { onDismiss() } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .controlSize(.small)
+        }
+        .font(.callout)
+        .padding(8)
+        .frame(maxWidth: .infinity)
+        .background(.red.opacity(0.15))
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(.red.opacity(0.3)), alignment: .bottom)
     }
 }
 

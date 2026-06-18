@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/craigharman/gitify/compare/v1.2.0...v1.3.0) (2026-06-18)
+
+
+### Features
+
+* add a push after merge option ([92295ee](https://github.com/craigharman/gitify/commit/92295ee22d135dd8bd7266ec5e7afb893820db4e))
+* add merge rebase option if that merge error occurs ([09ebf84](https://github.com/craigharman/gitify/commit/09ebf84698d513580ed7faad7e0ba2770cfc4cf3))
+
+
+### Bug Fixes
+
+* The merge with push was reloading the merge window. This is now fixed. ([75b7cf9](https://github.com/craigharman/gitify/commit/75b7cf965081b2033c0cde859d8b9adc03eb3a4b))
+
 ## [1.2.0](https://github.com/craigharman/gitify/compare/v1.1.0...v1.2.0) (2026-06-18)
 
 

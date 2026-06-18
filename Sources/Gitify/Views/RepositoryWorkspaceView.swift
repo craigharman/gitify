@@ -42,18 +42,13 @@ struct RepositoryWorkspaceView: View {
             WorkspaceRail(viewModel: viewModel, section: $section, integrationSheet: $integrationSheet)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
         } detail: {
-            // Banners sit in-flow above the content (not as an overlay) so they push the panel
-            // down instead of covering it. The sidebar is unaffected — this is the detail column.
+            // Push the content down by the banners' measured height (a real frame inset via
+            // .padding, which every content type respects — including the AppKit-backed
+            // HSplitView that ignores safeAreaInset and overdraws a VStack sibling). The banners
+            // render in the cleared top gap via .overlay. The sidebar is a separate column.
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle(sectionTitle) // current view name, shown over the content
-                // Reserve space equal to the banner's measured height so content (incl. scroll
-                // views) is pushed down and never overlaps the banner.
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    Color.clear.frame(height: bannerHeight)
-                }
-                // Render the banners floating at the top of the content area (the sidebar is a
-                // separate column, so it's unaffected); measure their height for the inset above.
+                .padding(.top, bannerHeight)
                 .overlay(alignment: .top) {
                     banners
                         .background(
@@ -64,6 +59,7 @@ struct RepositoryWorkspaceView: View {
                             }
                         )
                 }
+                .navigationTitle(sectionTitle) // current view name, shown over the content
         }
         .onChange(of: section) { _, new in
             if let data = try? JSONEncoder().encode(new) {

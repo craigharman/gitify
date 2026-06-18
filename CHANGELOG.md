@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/craigharman/gitify/compare/v1.4.1...v1.4.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* copy SwiftPM resource bundle into .app to prevent launch crash ([67e9d5b](https://github.com/craigharman/gitify/commit/67e9d5bab42cb16b7815e8f0428a87d26f79be41))
+
 ## [1.4.1](https://github.com/craigharman/gitify/compare/v1.4.0...v1.4.1) (2026-06-18)
 
 

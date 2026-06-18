@@ -29,6 +29,9 @@ final class RepositoryViewModel {
     private(set) var isLoading = false
     private(set) var loadError: String?
 
+    /// Clears the current error banner (the user dismissed it).
+    func dismissError() { loadError = nil }
+
     // Long-running network operation state (fetch/pull/push/clone).
     private(set) var operationTitle: String?
     private(set) var operationProgress: String?

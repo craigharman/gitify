@@ -29,7 +29,7 @@ struct MergeSheet: View {
     private var sourceIsLocal: Bool { viewModel.localBranches.contains { $0.name == source } }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             SheetHeader(symbol: "arrow.triangle.merge", title: "Merge",
                         subtitle: "Merge changes from “\(source)” into “\(target)”.")
 
@@ -50,7 +50,7 @@ struct MergeSheet: View {
 
             LabeledRow("Conflicts") { conflictStatus }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 option("Squash Commits", "Combine all changes into one single commit.",
                        isOn: $squash)
                 option("Always Generate Merge Commit",
@@ -67,6 +67,7 @@ struct MergeSheet: View {
                            isOn: $deleteSource, disabled: noCommit)
                 }
             }
+            .padding(.leading, FormMetrics.contentInset) // align checkboxes under the fields
 
             Spacer(minLength: 0)
             HStack {
@@ -86,7 +87,7 @@ struct MergeSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 560, height: 520)
+        .frame(width: 600, height: 480)
         .task(id: source) { await loadPreview() }
     }
 
@@ -194,9 +195,19 @@ private struct LabeledRow<Content: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("\(label):").frame(width: 80, alignment: .trailing).foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: FormMetrics.labelGap) {
+            Text("\(label):")
+                .frame(width: FormMetrics.labelWidth, alignment: .trailing)
+                .foregroundStyle(.secondary)
             content
         }
     }
+}
+
+/// Shared metrics so labeled fields and the option checkboxes line up on one content column.
+private enum FormMetrics {
+    static let labelWidth: CGFloat = 80
+    static let labelGap: CGFloat = 8
+    /// Left inset of the content column (right edge of the label gutter).
+    static var contentInset: CGFloat { labelWidth + labelGap }
 }

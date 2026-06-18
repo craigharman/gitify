@@ -44,6 +44,20 @@ struct RepositoryWorkspaceView: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(sectionTitle) // current view name, shown over the content
+                // Banners sit over the content area only (not the sidebar), just under the toolbar.
+                .overlay(alignment: .top) {
+                    VStack(spacing: 8) {
+                        if let operation = viewModel.operation {
+                            OperationBanner(operation: operation) {
+                                Task { await viewModel.abortOperation() }
+                            }
+                        }
+                        if let error = viewModel.loadError {
+                            ErrorBanner(message: error) { viewModel.dismissError() }
+                        }
+                    }
+                    .padding(.top, 8)
+                }
         }
         .onChange(of: section) { _, new in
             if let data = try? JSONEncoder().encode(new) {
@@ -100,18 +114,6 @@ struct RepositoryWorkspaceView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsSheet(viewModel: viewModel) }
         .task { await viewModel.load() }
-        .overlay(alignment: .top) {
-            VStack(spacing: 0) {
-                if let operation = viewModel.operation {
-                    OperationBanner(operation: operation) {
-                        Task { await viewModel.abortOperation() }
-                    }
-                }
-                if let error = viewModel.loadError {
-                    ErrorBanner(message: error)
-                }
-            }
-        }
         .overlay {
             if viewModel.isBusy {
                 OperationOverlay(title: viewModel.operationTitle ?? "Working",
@@ -417,14 +419,14 @@ private struct WorkspaceRail: View {
             }
 
             Section("Remote", isExpanded: expanded("Remote")) {
-                if viewModel.remoteBranches.isEmpty {
+                let nodes = remoteTreeNodes
+                if nodes.isEmpty {
                     Label("Remote Branches", systemImage: "cloud").tag(WorkspaceSection.remotes)
                         .contextMenu { remoteMenu }
                 } else {
-                    // Same tree as Local: the remote name (e.g. origin) is the top folder.
-                    // Drop the symbolic "<remote>/HEAD" ref — it's a pointer, not a branch.
-                    let remotes = viewModel.remoteBranches.filter { !$0.name.hasSuffix("/HEAD") }
-                    BranchTreeList(nodes: BranchNode.tree(from: remotes), viewModel: viewModel,
+                    // The remote name (e.g. origin) is the top folder; its tracking branches sit
+                    // underneath. Remotes with no fetched branches still appear (see remoteTreeNodes).
+                    BranchTreeList(nodes: nodes, viewModel: viewModel,
                                    selection: $section, integrationSheet: $integrationSheet,
                                    isRemote: true, folderIcon: "cloud")
                 }
@@ -461,6 +463,19 @@ private struct WorkspaceRail: View {
                 .background(.bar)
             }
         }
+    }
+
+    /// Remote tree: each configured remote as a top-level cloud folder containing its fetched
+    /// tracking branches. A remote that exists but hasn't been fetched yet (no tracking branches)
+    /// still appears as an empty folder, so a newly added remote is visible immediately.
+    private var remoteTreeNodes: [BranchNode] {
+        let branches = viewModel.remoteBranches.filter { !$0.name.hasSuffix("/HEAD") }
+        var nodes = BranchNode.tree(from: branches)
+        let present = Set(nodes.map(\.name))
+        for remote in viewModel.remotes where !present.contains(remote.name) {
+            nodes.append(BranchNode(id: remote.name, name: remote.name, ref: nil, children: []))
+        }
+        return nodes.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     /// Context menu for the "Remote Branches" rail entry.
@@ -656,19 +671,44 @@ private struct BranchTreeRow: View {
         } else {
             // Folder header row. Children are emitted as sibling List rows by BranchTreeList's
             // flattening, so this renders only the header (no nested content here).
-            HStack(spacing: 4) {
-                Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                    .font(.caption2).foregroundStyle(.secondary).frame(width: 12)
+            // A childless folder is a configured remote with no tracking branches here — either
+            // not fetched yet, or fetched but the remote has nothing pushed. Show it without a
+            // chevron, with a neutral "no branches" hint, and offer Fetch / Remove actions.
+            let isEmptyRemote = isRemote && node.children.isEmpty
+            let header = HStack(spacing: 4) {
+                if isEmptyRemote {
+                    Color.clear.frame(width: 12) // keep the icon aligned with chevroned rows
+                } else {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2).foregroundStyle(.secondary).frame(width: 12)
+                }
                 Image(systemName: folderIcon).frame(width: 16)
                 Text(node.name).lineLimit(1)
-                Spacer(minLength: 0)
+                Spacer(minLength: 4)
+                if isEmptyRemote {
+                    Text("no branches").font(.caption2).foregroundStyle(.tertiary)
+                }
             }
             .padding(.vertical, vpad)
             .padding(.leading, indent)
+            .padding(.trailing, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .onTapGesture {
+                guard !isEmptyRemote else { return }
                 if expanded { collapsed.insert(node.id) } else { collapsed.remove(node.id) }
+            }
+
+            if isEmptyRemote {
+                header.contextMenu {
+                    Button("Fetch") { Task { await viewModel.fetch() } }
+                    Divider()
+                    Button("Remove “\(node.name)”", role: .destructive) {
+                        Task { await viewModel.removeRemote(node.name) }
+                    }
+                }
+            } else {
+                header
             }
         }
     }
@@ -757,15 +797,49 @@ struct CountBadge: View {
     }
 }
 
+/// A dismissible error card. Shown over the content area (not the sidebar), with the full
+/// message in a scrollable region so long git output stays readable and bounded.
 private struct ErrorBanner: View {
     let message: String
-    var body: some View {
+    var onDismiss: (() -> Void)? = nil
+
+    private var messageText: some View {
         Text(message)
             .font(.callout)
-            .padding(8)
-            .frame(maxWidth: .infinity)
-            .background(.red.opacity(0.15))
-            .overlay(Rectangle().frame(height: 1).foregroundStyle(.red.opacity(0.3)), alignment: .bottom)
+            .foregroundStyle(Color(.sRGB, red: 0.55, green: 0.0, blue: 0.0)) // dark red
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.octagon.fill")
+                .foregroundStyle(.red)
+                .font(.title3)
+            messageText // sizes to the text, so the card hugs its content
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.callout.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color(.sRGB, red: 0.55, green: 0.0, blue: 0.0)) // dark red
+                .help("Dismiss")
+            }
+        }
+        .padding(12)
+        // The shadow lives on the background shape only — applying it to the whole card would
+        // also shadow the text. Opaque base + red tint so content doesn't show through.
+        .background {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(nsColor: .textBackgroundColor))
+                .overlay(RoundedRectangle(cornerRadius: 10).fill(.red.opacity(0.12)))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.red.opacity(0.45)))
+                .shadow(radius: 10, y: 3)
+        }
+        .frame(maxWidth: 620)
+        .padding(12)
     }
 }
 

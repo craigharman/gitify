@@ -13,6 +13,7 @@ struct ConflictEditorView: View {
     @State private var segments: [ConflictSegment] = []
     @State private var choices: [Int: Choice] = [:]
     @State private var loaded = false
+    @State private var currentConflict: Int?
 
     private var language: String { (path as NSString).pathExtension.lowercased() }
 
@@ -31,25 +32,34 @@ struct ConflictEditorView: View {
                     Text(path).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                conflictNavigation
                 Text("\(unresolvedCount) unresolved").foregroundStyle(unresolvedCount == 0 ? .green : .orange)
             }
             .padding()
             Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
-                        switch segment {
-                        case let .text(text):
-                            codeBlock(text, background: .clear)
-                        case let .conflict(ours, theirs, _):
-                            conflictRegion(index: index, ours: ours, theirs: theirs)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                            switch segment {
+                            case let .text(text):
+                                codeBlock(text, background: .clear)
+                            case let .conflict(ours, theirs, _):
+                                conflictRegion(index: index, ours: ours, theirs: theirs)
+                                    .id(index)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .font(.system(.body, design: .monospaced))
+                .onChange(of: currentConflict) { _, newValue in
+                    if let target = newValue {
+                        withAnimation { proxy.scrollTo(target, anchor: .center) }
+                    }
+                }
             }
-            .font(.system(.body, design: .monospaced))
 
             Divider()
             HStack {
@@ -73,6 +83,58 @@ struct ConflictEditorView: View {
             if let contents = await viewModel.fileContents(path) {
                 segments = ConflictParser.parse(contents)
             }
+        }
+    }
+
+    private var conflictNavigation: some View {
+        HStack(spacing: 4) {
+            Button(action: goToPreviousConflict) {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.borderless)
+            .disabled(conflictIndices.isEmpty)
+            .help("Previous conflict")
+            .keyboardShortcut(.upArrow, modifiers: [.command])
+
+            Text(conflictPositionLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 40)
+
+            Button(action: goToNextConflict) {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .disabled(conflictIndices.isEmpty)
+            .help("Next conflict")
+            .keyboardShortcut(.downArrow, modifiers: [.command])
+        }
+        .padding(.trailing, 8)
+    }
+
+    private var conflictPositionLabel: String {
+        guard !conflictIndices.isEmpty else { return "" }
+        if let current = currentConflict, let pos = conflictIndices.firstIndex(of: current) {
+            return "\(pos + 1)/\(conflictIndices.count)"
+        }
+        return "\(conflictIndices.count)"
+    }
+
+    private func goToPreviousConflict() {
+        guard !conflictIndices.isEmpty else { return }
+        if let current = currentConflict, let pos = conflictIndices.firstIndex(of: current), pos > 0 {
+            currentConflict = conflictIndices[pos - 1]
+        } else {
+            currentConflict = conflictIndices.last
+        }
+    }
+
+    private func goToNextConflict() {
+        guard !conflictIndices.isEmpty else { return }
+        if let current = currentConflict, let pos = conflictIndices.firstIndex(of: current), pos < conflictIndices.count - 1 {
+            currentConflict = conflictIndices[pos + 1]
+        } else {
+            currentConflict = conflictIndices.first
         }
     }
 

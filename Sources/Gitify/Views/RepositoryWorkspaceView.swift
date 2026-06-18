@@ -19,6 +19,7 @@ enum WorkspaceSection: Hashable, Codable {
 /// A repository's workspace: an inner section rail plus the section's content.
 struct RepositoryWorkspaceView: View {
     let ref: RepositoryRef
+    @Environment(AppModel.self) private var model
     @State private var viewModel: RepositoryViewModel
     @State private var section: WorkspaceSection
     @State private var integrationSheet: IntegrationSheet?
@@ -175,6 +176,15 @@ struct RepositoryWorkspaceView: View {
             Button("Add Submodule…") { promptAddSubmodule() }
             Divider()
             Button("Repository Settings…") { showSettings = true }
+            Divider()
+            Button("Remove Repository…", role: .destructive) {
+                if Prompt.confirmDestructive(
+                    title: "Remove \u{201C}\(ref.name)\u{201D}?",
+                    message: "This removes the repository from Gitify. The files on disk are not affected.",
+                    confirm: "Remove") {
+                    model.remove(ref)
+                }
+            }
         } label: {
             Label("More", systemImage: "ellipsis.circle")
         }

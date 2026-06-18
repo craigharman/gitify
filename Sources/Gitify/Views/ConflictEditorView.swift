@@ -14,6 +14,8 @@ struct ConflictEditorView: View {
     @State private var choices: [Int: Choice] = [:]
     @State private var loaded = false
 
+    private var language: String { (path as NSString).pathExtension.lowercased() }
+
     private var conflictIndices: [Int] {
         segments.indices.filter { if case .conflict = segments[$0] { return true }; return false }
     }
@@ -110,7 +112,14 @@ struct ConflictEditorView: View {
     }
 
     private func codeBlock(_ text: String, background: Color) -> some View {
-        Text(text.isEmpty ? " " : text)
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let highlighted = lines.enumerated().reduce(AttributedString()) { result, pair in
+            var out = result
+            if pair.offset > 0 { out += AttributedString("\n") }
+            out += SyntaxHighlighter.highlight(String(pair.element), language: language)
+            return out
+        }
+        return Text(text.isEmpty ? AttributedString(" ") : highlighted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(background)

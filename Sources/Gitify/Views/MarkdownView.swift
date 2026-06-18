@@ -27,9 +27,10 @@ struct MarkdownView: View {
                 .padding(.top, level <= 2 ? 6 : 2)
         case let .paragraph(text):
             Text(inline(text))
-        case let .code(code):
+        case let .code(code, language):
             ScrollView(.horizontal) {
-                Text(code).font(.system(.callout, design: .monospaced))
+                highlightedCode(code, language: language)
+                    .font(.system(.callout, design: .monospaced))
                     .padding(10)
             }
             .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
@@ -63,11 +64,22 @@ struct MarkdownView: View {
         return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
     }
 
+    private func highlightedCode(_ code: String, language: String) -> Text {
+        let lines = code.split(separator: "\n", omittingEmptySubsequences: false)
+        let highlighted = lines.enumerated().reduce(AttributedString()) { result, pair in
+            var out = result
+            if pair.offset > 0 { out += AttributedString("\n") }
+            out += SyntaxHighlighter.highlight(String(pair.element), language: language)
+            return out
+        }
+        return Text(code.isEmpty ? AttributedString(" ") : highlighted)
+    }
+
     /// A parsed Markdown block.
     enum Block {
         case heading(level: Int, text: String)
         case paragraph(String)
-        case code(String)
+        case code(String, language: String)
         case listItem(ordered: Bool, marker: String, text: String)
         case quote(String)
         case rule
@@ -88,13 +100,14 @@ struct MarkdownView: View {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
 
                 if trimmed.hasPrefix("```") {
+                    let lang = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces).lowercased()
                     i += 1
                     var code: [String] = []
                     while i < lines.count, !lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
                         code.append(lines[i]); i += 1
                     }
                     i += 1 // closing fence
-                    blocks.append(.code(code.joined(separator: "\n")))
+                    blocks.append(.code(code.joined(separator: "\n"), language: lang))
                 } else if trimmed.isEmpty {
                     i += 1
                 } else if trimmed.hasPrefix("#") {

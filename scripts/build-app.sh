@@ -18,6 +18,12 @@ echo "==> Assembling ${APP}"
 rm -rf "${APP}"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${BIN}" "${APP}/Contents/MacOS/Gitify"
+
+# Copy the SwiftPM-generated resource bundle so Bundle.module works at runtime.
+BUNDLE_DIR="$(dirname "${BIN}")"
+if [[ -d "${BUNDLE_DIR}/Gitify_Gitify.bundle" ]]; then
+  cp -R "${BUNDLE_DIR}/Gitify_Gitify.bundle" "${APP}/Contents/Resources/"
+fi
 cp "${ROOT}/Resources/Info.plist" "${APP}/Contents/Info.plist"
 if [[ -n "${VERSION:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${APP}/Contents/Info.plist"

@@ -2,14 +2,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "bump-minor-pre-major": true,
-      "extra-files": [
-        {
-          "type": "xml",
-          "path": "Resources/Info.plist",
-          "xpath": "//dict/string[preceding-sibling::key[1]='CFBundleShortVersionString']"
-        }
-      ]
+      "bump-minor-pre-major": true
     }
   }
 }

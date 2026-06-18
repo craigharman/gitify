@@ -34,12 +34,13 @@ jobs:
         run: swift run GitKitChecks
 
       - name: Build DMG
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
         run: scripts/package.sh
 
       - name: Upload DMG to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ls -la build/
           gh release upload "${{ needs.release-please.outputs.tag_name }}" \
             "build/Gitify-${{ needs.release-please.outputs.version }}.dmg"

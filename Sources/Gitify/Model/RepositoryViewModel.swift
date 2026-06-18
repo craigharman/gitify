@@ -398,6 +398,13 @@ final class RepositoryViewModel {
             try await service.pull(rebase: rebase, onProgress: progress)
         }
     }
+    /// Pulls with an explicit merge (--no-rebase), useful when branches have diverged
+    /// and the user wants to resolve via merge regardless of their git config.
+    func pullMerge() async {
+        await runOperation("Pulling (merge)") { service, progress in
+            try await service.pull(rebase: false, noRebase: true, onProgress: progress)
+        }
+    }
     func push(force: Bool = false) async {
         let setUpstream = currentBranch?.upstream == nil
         await runOperation(force ? "Force Pushing" : "Pushing") { service, progress in

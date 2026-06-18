@@ -488,9 +488,10 @@ public struct CLIGitService: GitService {
         try await runner.runStreaming(args, onProgress: onProgress)
     }
 
-    public func pull(rebase: Bool, onProgress: (@Sendable (String) -> Void)?) async throws {
+    public func pull(rebase: Bool, noRebase: Bool, onProgress: (@Sendable (String) -> Void)?) async throws {
         var args = ["pull", "--progress"]
         if rebase { args.append("--rebase") }
+        else if noRebase { args.append("--no-rebase") }
         try await runner.runStreaming(args, onProgress: onProgress)
     }
 

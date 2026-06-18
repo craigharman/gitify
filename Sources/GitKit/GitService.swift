@@ -136,7 +136,9 @@ public protocol GitService: Sendable {
     func fetch(remote: String?, onProgress: (@Sendable (String) -> Void)?) async throws
 
     /// Pulls the current branch from its upstream, optionally rebasing instead of merging.
-    func pull(rebase: Bool, onProgress: (@Sendable (String) -> Void)?) async throws
+    /// When `noRebase` is true, passes `--no-rebase` to force a merge even if `pull.rebase`
+    /// is set in git config.
+    func pull(rebase: Bool, noRebase: Bool, onProgress: (@Sendable (String) -> Void)?) async throws
 
     /// Pushes `branch` (default current) to `remote`. `force` uses `--force-with-lease`.
     func push(remote: String?, branch: String?, setUpstream: Bool, force: Bool,
@@ -233,5 +235,9 @@ public protocol GitService: Sendable {
 public extension GitService {
     func log(skip: Int = 0, limit: Int = 200, revisions: [String] = ["--all"]) async throws -> CommitPage {
         try await log(skip: skip, limit: limit, revisions: revisions)
+    }
+
+    func pull(rebase: Bool, onProgress: (@Sendable (String) -> Void)?) async throws {
+        try await pull(rebase: rebase, noRebase: false, onProgress: onProgress)
     }
 }

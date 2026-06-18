@@ -49,7 +49,19 @@ struct RepositoryWorkspaceView: View {
                     }
                 }
                 if let error = viewModel.loadError {
-                    ErrorBanner(message: error) {
+                    ErrorBanner(
+                        message: error,
+                        actions: error.isDivergentBranchError ? [
+                            .init(label: "Pull with Rebase") {
+                                viewModel.dismissError()
+                                Task { await viewModel.pull(rebase: true) }
+                            },
+                            .init(label: "Pull with Merge") {
+                                viewModel.dismissError()
+                                Task { await viewModel.pullMerge() }
+                            },
+                        ] : []
+                    ) {
                         viewModel.dismissError()
                     }
                 }
@@ -694,7 +706,13 @@ struct CountBadge: View {
 }
 
 private struct ErrorBanner: View {
+    struct Action {
+        let label: String
+        let handler: () -> Void
+    }
+
     let message: String
+    var actions: [Action] = []
     let onDismiss: () -> Void
 
     var body: some View {
@@ -702,6 +720,10 @@ private struct ErrorBanner: View {
             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
             Text(message)
             Spacer()
+            ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
+                Button(action.label, action: action.handler)
+                    .controlSize(.small)
+            }
             Button { onDismiss() } label: {
                 Image(systemName: "xmark")
             }
@@ -713,6 +735,13 @@ private struct ErrorBanner: View {
         .frame(maxWidth: .infinity)
         .background(.red.opacity(0.15))
         .overlay(Rectangle().frame(height: 1).foregroundStyle(.red.opacity(0.3)), alignment: .bottom)
+    }
+}
+
+private extension String {
+    /// True when the string looks like git\u{2019}s \u{201c}divergent branches\u{201d} error.
+    var isDivergentBranchError: Bool {
+        contains("divergent") || contains("Need to specify how to reconcile")
     }
 }
 

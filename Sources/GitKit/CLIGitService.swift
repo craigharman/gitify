@@ -216,6 +216,23 @@ public struct CLIGitService: GitService {
         _ = try? await runner.runRaw(["clean", "-fd", "--"] + paths)
     }
 
+    /// Removes files from the index but keeps them on disk (`git rm --cached`).
+    public func untrack(paths: [String]) async throws {
+        guard !paths.isEmpty else { return }
+        try await runner.run(["rm", "--cached", "-r", "--"] + paths)
+    }
+
+    /// Appends patterns to the repository's `.gitignore`, creating it if needed.
+    public func addToGitignore(patterns: [String]) throws {
+        guard !patterns.isEmpty else { return }
+        let gitignore = root.appendingPathComponent(".gitignore")
+        var existing = (try? String(contentsOf: gitignore, encoding: .utf8)) ?? ""
+        // Ensure we start on a new line.
+        if !existing.isEmpty && !existing.hasSuffix("\n") { existing += "\n" }
+        existing += patterns.joined(separator: "\n") + "\n"
+        try existing.write(to: gitignore, atomically: true, encoding: .utf8)
+    }
+
     public func applyHunk(fileHeader: String, hunkText: String, reverse: Bool) async throws {
         var patch = fileHeader
         if !patch.hasSuffix("\n") { patch += "\n" }

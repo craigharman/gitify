@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import GitKit
 
@@ -160,6 +161,48 @@ final class RepositoryViewModel {
     func discardFiles(_ files: [FileStatus]) async {
         guard !files.isEmpty else { return }
         await mutate { try await $0.discard(paths: files.map(\.path)) }
+    }
+
+    func deleteFiles(_ files: [FileStatus]) async {
+        guard !files.isEmpty else { return }
+        for file in files {
+            let url = ref.url.appendingPathComponent(file.path)
+            try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        }
+        await reloadAfterMutation()
+    }
+
+    func ignoreFiles(_ files: [FileStatus]) async {
+        guard let service, !files.isEmpty else { return }
+        do {
+            try service.addToGitignore(patterns: files.map(\.path))
+            await reloadAfterMutation()
+        } catch {
+            loadError = "\(error)"
+        }
+    }
+
+    func untrackFiles(_ files: [FileStatus]) async {
+        guard !files.isEmpty else { return }
+        await mutate { try await $0.untrack(paths: files.map(\.path)) }
+    }
+
+    func revealInFinder(_ files: [FileStatus]) {
+        let urls = files.map { ref.url.appendingPathComponent($0.path) }
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    func openInDefaultEditor(_ files: [FileStatus]) {
+        for file in files {
+            NSWorkspace.shared.open(ref.url.appendingPathComponent(file.path))
+        }
+    }
+
+    func openInTerminal(_ file: FileStatus) {
+        let dir = ref.url.appendingPathComponent(file.path).deletingLastPathComponent()
+        let terminalURL = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
+        let config = NSWorkspace.OpenConfiguration()
+        NSWorkspace.shared.open([dir], withApplicationAt: terminalURL, configuration: config)
     }
 
     func stageFiles(_ files: [FileStatus]) async {

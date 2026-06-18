@@ -147,12 +147,17 @@ struct WorkingTreeView: View {
             stagedFiles.map { FileSelection(path: $0.path, staged: true) } +
             unstagedFiles.map { FileSelection(path: $0.path, staged: false) }
 
+        // Resolve selected peers per side for multi-select context menus.
+        let stagedPeers = selectedStagedFiles(in: status)
+        let unstagedPeers = selectedUnstagedFiles(in: status)
+
         return List {
             if !stagedFiles.isEmpty {
                 Section {
                     ForEach(stagedFiles) { file in
                         StagingFileRow(file: file, staged: true, viewModel: viewModel,
                                        isSelected: selection.contains(FileSelection(path: file.path, staged: true)),
+                                       peers: stagedPeers,
                                        onResolveConflict: { conflictTarget = ConflictTarget(path: $0) },
                                        onClick: { mods in
                                            handleRowClick(FileSelection(path: file.path, staged: true),
@@ -178,6 +183,7 @@ struct WorkingTreeView: View {
                     ForEach(unstagedFiles) { file in
                         StagingFileRow(file: file, staged: false, viewModel: viewModel,
                                        isSelected: selection.contains(FileSelection(path: file.path, staged: false)),
+                                       peers: unstagedPeers,
                                        onResolveConflict: { conflictTarget = ConflictTarget(path: $0) },
                                        onClick: { mods in
                                            handleRowClick(FileSelection(path: file.path, staged: false),
@@ -254,9 +260,21 @@ private struct StagingFileRow: View {
     let staged: Bool
     @Bindable var viewModel: RepositoryViewModel
     let isSelected: Bool
+    /// The resolved peer files on the same side when multi-selected, or just this file.
+    var peers: [FileStatus] = []
     var onResolveConflict: ((String) -> Void)? = nil
     var onClick: ((NSEvent.ModifierFlags) -> Void)? = nil
     @State private var hovering = false
+
+    /// The files the context menu should act on: the multi-select peers if this row is part
+    /// of a multi-selection, otherwise just this single file.
+    private var targets: [FileStatus] {
+        peers.count > 1 ? peers : [file]
+    }
+
+    private var isMulti: Bool { targets.count > 1 }
+    private var allUntracked: Bool { targets.allSatisfy(\.isUntracked) }
+    private var allTracked: Bool { targets.allSatisfy { !$0.isUntracked } }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -283,30 +301,93 @@ private struct StagingFileRow: View {
         .onHover { hovering = $0 }
         .onTapGesture { onClick?(currentModifiers()) }
         .contextMenu {
-            if file.isConflicted {
+            // File actions — always available.
+            Button(isMulti ? "Show \(targets.count) in Finder" : "Show in Finder") {
+                viewModel.revealInFinder(targets)
+            }
+            if !isMulti {
+                Button("Open in Terminal") { viewModel.openInTerminal(file) }
+            }
+            Button(isMulti ? "Open \(targets.count) in Editor" : "Open in Default Editor") {
+                viewModel.openInDefaultEditor(targets)
+            }
+
+            Divider()
+
+            // Conflict resolution — single conflicted file only.
+            if file.isConflicted && !isMulti {
                 Button("Resolve in Editor…") { onResolveConflict?(file.path) }
                 Divider()
                 Button("Take Ours (current branch)") { Task { await viewModel.resolveConflict(file, useOurs: true) } }
                 Button("Take Theirs (incoming)") { Task { await viewModel.resolveConflict(file, useOurs: false) } }
                 Button("Mark Resolved") { Task { await viewModel.markResolved(file) } }
             } else if staged {
-                Button("Unstage") { Task { await viewModel.unstage(file) } }
+                // Staged files.
+                Button(isMulti ? "Unstage \(targets.count) Files" : "Unstage") {
+                    Task { await viewModel.unstageFiles(targets) }
+                }
             } else {
-                Button("Stage") { Task { await viewModel.stage(file) } }
-                Button("Discard Changes…", role: .destructive) { confirmDiscard() }
+                // Unstaged files.
+                Button(isMulti ? "Stage \(targets.count) Files" : "Stage") {
+                    Task { await viewModel.stageFiles(targets) }
+                }
+
+                // Discard — only for tracked files with modifications.
+                if allTracked {
+                    Button(isMulti ? "Discard \(targets.count) Changes…" : "Discard Changes…",
+                           role: .destructive) { confirmDiscard(targets) }
+                }
+
+                // Delete — for untracked files.
+                if allUntracked {
+                    Button(isMulti ? "Delete \(targets.count) Files…" : "Delete File…",
+                           role: .destructive) { confirmDelete(targets) }
+                }
+
+                Divider()
+
+                // Ignore — untracked files only.
+                if allUntracked {
+                    Button(isMulti ? "Ignore \(targets.count) Files" : "Ignore") {
+                        Task { await viewModel.ignoreFiles(targets) }
+                    }
+                }
+
+                // Untrack — tracked files only.
+                if allTracked {
+                    Button(isMulti ? "Untrack \(targets.count) Files" : "Untrack") {
+                        Task { await viewModel.untrackFiles(targets) }
+                    }
+                }
             }
         }
     }
 
-    private func confirmDiscard() {
+    private func confirmDiscard(_ files: [FileStatus]) {
         let alert = NSAlert()
-        alert.messageText = "Discard changes to \(URL(fileURLWithPath: file.path).lastPathComponent)?"
+        alert.messageText = files.count == 1
+            ? "Discard changes to \(URL(fileURLWithPath: files[0].path).lastPathComponent)?"
+            : "Discard changes to \(files.count) files?"
         alert.informativeText = "This cannot be undone."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Discard")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
-            Task { await viewModel.discard(file) }
+            Task { await viewModel.discardFiles(files) }
+        }
+    }
+
+    private func confirmDelete(_ files: [FileStatus]) {
+        let alert = NSAlert()
+        alert.messageText = files.count == 1
+            ? "Delete \(URL(fileURLWithPath: files[0].path).lastPathComponent)?"
+            : "Delete \(files.count) files?"
+        alert.informativeText = "The files will be moved to the Trash."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            Task { await viewModel.deleteFiles(files) }
         }
     }
 }

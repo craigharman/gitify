@@ -1,71 +1,55 @@
 # Gitify
 
-A fast, lightweight, native macOS Git client — built with SwiftUI + AppKit, modeled on
-the Gitfox interface concept.
+A fast, lightweight, native macOS Git client built entirely with SwiftUI and AppKit. No Electron, no embedded runtimes -- just a clean, responsive app that wraps your installed `git` binary so every operation matches your exact git config.
 
-## Architecture
+![Gitify screenshot](docs/screenshot.png)
 
-- **`GitKit`** (`Sources/GitKit`) — a headless, testable Swift package that is the Git
-  engine. It shells out to the user's installed `git` binary via plumbing/porcelain
-  commands (behind the `GitService` protocol), which gives full coverage of advanced
-  features — worktrees, stashes, branches, tags — with semantics that always match the
-  user's `git`. (libgit2 was rejected because it breaks on modern worktrees.)
-- **`Gitify`** (`Sources/Gitify`) — the SwiftUI app: repository manager, overview,
-  working-tree/staging, commit history + inspector, and branch/stash/worktree views,
-  all driven by `GitKit`.
+## Features
+
+- **Full working-tree and staging view** -- stage, unstage, and discard changes at the file, hunk, or individual line level
+- **Unified and split diffs with syntax highlighting** -- review changes the way you prefer
+- **Lane-based commit graph** -- visualise your branch history with a clean, interactive graph
+- **Merge, rebase, cherry-pick, and revert** -- handle complex workflows with guided dialogs and a 3-way conflict editor
+- **Fetch, pull, and push with live progress** -- see exactly what's happening during network operations
+- **Branch, tag, stash, and worktree management** -- all from a single sidebar
+- **GitHub and GitLab account integration** -- browse remote repositories and clone with a click
+- **Clone from URL with progress tracking** -- add repositories quickly
+- **Repository overview** -- stats, top committers, lines by language, and a rendered README
+- **Reflog and submodule support**
+- **FSEvents auto-refresh** -- your view updates automatically when files change on disk
+- **Check for Updates** -- stay current via the built-in update checker
 
 ## Requirements
 
-- macOS 14+
-- Swift 6 toolchain (Command Line Tools is sufficient — full Xcode is **not** required)
-- `git` on `PATH`
+- macOS 14 or later
 
-## Build & run
+## Installation
+
+1. Go to the [Releases](https://github.com/craigharman/gitify/releases) page
+2. Download the latest `.dmg` file
+3. Open the `.dmg` and drag **Gitify.app** into your Applications folder
+4. On first launch, macOS will block the app because it is not signed with an Apple Developer ID. To allow it:
+   - Open **System Settings** > **Privacy & Security**
+   - Scroll down to the **Security** section
+   - You will see a message that "Gitify" was blocked -- click **Open Anyway**
+   - Confirm in the dialog that appears
+
+## Building from source
+
+Gitify builds with the Swift CLI toolchain only -- full Xcode is not required, just the Command Line Tools.
 
 ```sh
-# Build the engine and app
+# Build
 swift build
 
-# Run the engine verification suite (XCTest/swift-testing aren't bundled with the
-# Command Line Tools toolchain, so checks run as a standalone executable harness)
+# Run the test suite
 swift run GitKitChecks
 
-# Assemble a runnable Gitify.app bundle (handed-rolled since there is no Xcode project)
+# Assemble a runnable .app bundle
 scripts/build-app.sh debug      # or: release
 open build/Gitify.app
 ```
 
-## Status
+## License
 
-Implemented:
-- Git engine: status (porcelain v2), history (paged log) + per-commit changes/diffs,
-  refs (branches/tags + tracking), worktrees, stashes (+ diffs, branch-from-stash), unified
-  diffs, mutations (stage/unstage/discard, commit, amend), hunk-level staging, lane-assignment
-  graph layout, branch/tag/stash/worktree management, merge (with conflict preview) / rebase /
-  cherry-pick / revert / reset / abort, conflict resolution (ours/theirs/mark-resolved),
-  reflog, remotes (add/remove, push tags, force-push, delete remote branch), config get/set,
-  repository stats (lines-by-language, top committers, README), submodules, per-line
-  staging, conflict-marker parsing, and streamed network ops
-  (fetch/pull/push/pull-rebase/clone). Argument-injection
-  hardened (`--` separators, leading-dash rejection, restricted `GIT_ALLOW_PROTOCOL`).
-  Covered by a 138-check integration suite.
-- App: repository manager with a sidebar repo-switcher (add / **clone-from-URL** with
-  progress), overview (stats + rendered README), a full working-tree/staging view
-  (stage/unstage/discard, **per-hunk and per-line staging**, **unified + split diffs with
-  syntax highlighting**, commit + amend), a **lane-based commit graph** with an Inspect-Changes
-  panel, **commit context menu** (cherry-pick/revert/reset/branch/tag), **fetch/pull/push**
-  with a live-progress overlay, branch/tag/stash/worktree management, **merge/rebase dialogs**,
-  a **3-way conflict editor**, submodules, reflog, **search/filter** across lists,
-  **GitHub/GitLab accounts** (token-based repo browsing + clone), **FSEvents auto-refresh**,
-  and a **Check for Updates** menu.
-- Packaging: `scripts/package.sh` builds a (optionally signed + notarized) `.dmg`. See
-  `docs/RELEASING.md`.
-
-Needs your credentials / external setup (see `docs/RELEASING.md`):
-- **Developer-ID notarization** — `package.sh` is ready; supply `SIGN_IDENTITY` + a notary
-  profile.
-- **Sparkle** silent auto-updates — needs an EdDSA key pair, a hosted appcast, and the
-  embedded framework. The in-app GitHub-release **Check for Updates** covers basic updating
-  until then.
-- **Full OAuth accounts + pull-request review** — the current accounts use personal access
-  tokens; OAuth needs a registered app.
+See [LICENSE](LICENSE) for details.

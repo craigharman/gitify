@@ -462,10 +462,19 @@ private struct WorkspaceRail: View {
                         Image(systemName: "arrow.triangle.branch")
                             .foregroundStyle(.tint)
                         Text(branch.name).fontWeight(.medium)
-                        if let ahead = branch.ahead, let behind = branch.behind, ahead + behind > 0 {
-                            Text("↑\(ahead) ↓\(behind)").foregroundStyle(.secondary)
-                        }
                         Spacer()
+                        if let behind = branch.behind, behind > 0 {
+                            Label("\(behind)", systemImage: "arrow.down")
+                                .font(.caption2.monospacedDigit())
+                                .padding(.horizontal, 6).padding(.vertical, 1)
+                                .background(Capsule().fill(.quaternary))
+                        }
+                        if let ahead = branch.ahead, ahead > 0 {
+                            Label("\(ahead)", systemImage: "arrow.up")
+                                .font(.caption2.monospacedDigit())
+                                .padding(.horizontal, 6).padding(.vertical, 1)
+                                .background(Capsule().fill(.quaternary))
+                        }
                     }
                     .font(.caption)
                     .padding(.horizontal, 14)

@@ -45,6 +45,11 @@ final class RepositoryViewModel {
     var amendMode: Bool = false
     private(set) var isCommitting = false
 
+    /// Source branch a "delete on merge" request wants removed, remembered while a merge is
+    /// being completed. A conflicting merge can't delete immediately (it's finished later by a
+    /// manual commit), so the intent is parked here until the merge is actually committed.
+    private var pendingMergeSourceToDelete: String?
+
     private var service: CLIGitService?
     private var nextSkip: Int? = 0
     private var watcher: RepositoryWatcher?
@@ -166,7 +171,15 @@ final class RepositoryViewModel {
             try await service.commit(message: commitMessage, amend: amendMode)
             commitMessage = ""
             amendMode = false
-            await reloadAfterMutation()
+            // A commit while a "delete on merge" is parked is the manual completion of a
+            // conflicted merge — finalize the deletion now, then reload refs so the gone
+            // branch disappears (reloadAfterMutation refreshes status/history only).
+            if pendingMergeSourceToDelete != nil {
+                await finalizePendingMergeDeletion()
+                await reloadEverything()
+            } else {
+                await reloadAfterMutation()
+            }
         } catch {
             loadError = "\(error)"
         }
@@ -396,17 +409,38 @@ final class RepositoryViewModel {
     /// deletes the now-merged `source` branch.
     func merge(source: String, into target: String, squash: Bool, noFastForward: Bool,
                noCommit: Bool, skipHooks: Bool, deleteSource: Bool) async {
+        // Park the deletion intent before attempting the merge so it survives a conflict: a
+        // conflicting merge throws below and is finished later by a manual commit, which calls
+        // finalizePendingMergeDeletion(). Don't delete when stopping before commit — nothing
+        // is merged yet.
+        if deleteSource && !noCommit {
+            pendingMergeSourceToDelete = source
+        }
         await runIntegration("Merge") { service in
             if target != self.currentBranch?.name {
                 try await service.checkout(target)
             }
             try await service.merge(branch: source, squash: squash, noFastForward: noFastForward,
                                     noCommit: noCommit, skipHooks: skipHooks)
-            // Reaching here means the merge completed (a conflicting merge throws above). Don't
-            // delete when the user chose to stop before committing — nothing is merged yet.
-            if deleteSource && !noCommit {
-                try await service.deleteBranch(name: source, force: false)
-            }
+            // Reaching here means the merge completed cleanly (a conflicting merge throws above).
+            await self.finalizePendingMergeDeletion()
+        }
+        // If the merge didn't leave a conflicted merge in progress (it finalized cleanly above,
+        // or failed for a non-conflict reason), drop any stale intent so it can't leak into a
+        // later unrelated commit.
+        if operation != .merge { pendingMergeSourceToDelete = nil }
+    }
+
+    /// Deletes the branch a "delete on merge" request targeted, once the merge has actually
+    /// been committed. No-op when nothing is pending; a failed deletion surfaces a banner but
+    /// doesn't undo the completed merge.
+    private func finalizePendingMergeDeletion() async {
+        guard let source = pendingMergeSourceToDelete, let service else { return }
+        pendingMergeSourceToDelete = nil
+        do {
+            try await service.deleteBranch(name: source, force: false)
+        } catch {
+            loadError = "Merged, but couldn’t delete “\(source)”: \(error)"
         }
     }
 
@@ -422,6 +456,8 @@ final class RepositoryViewModel {
 
     func abortOperation() async {
         guard let op = operation else { return }
+        // Aborting a conflicted merge cancels any parked "delete on merge" request too.
+        pendingMergeSourceToDelete = nil
         await runIntegration("Abort") {
             switch op {
             case .merge: try await $0.abortMerge()

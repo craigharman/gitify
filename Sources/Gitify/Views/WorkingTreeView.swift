@@ -109,32 +109,18 @@ struct WorkingTreeView: View {
 
     // MARK: - Selected-file helpers
 
+    /// Returns the selected unstaged files resolved against the current status.
     private func selectedUnstagedFiles(in status: WorkingTreeStatus) -> [FileStatus] {
         let paths = Set(selection.filter { !$0.staged }.map(\.path))
         guard !paths.isEmpty else { return [] }
         return status.unstagedFiles.filter { paths.contains($0.path) }
     }
 
+    /// Returns the selected staged files resolved against the current status.
     private func selectedStagedFiles(in status: WorkingTreeStatus) -> [FileStatus] {
         let paths = Set(selection.filter { $0.staged }.map(\.path))
         guard !paths.isEmpty else { return [] }
         return status.stagedFiles.filter { paths.contains($0.path) }
-    }
-
-    private func confirmDiscardSelected(in status: WorkingTreeStatus) {
-        let files = selectedUnstagedFiles(in: status)
-        guard !files.isEmpty else { return }
-        let alert = NSAlert()
-        alert.messageText = files.count == 1
-            ? "Discard changes to \(URL(fileURLWithPath: files[0].path).lastPathComponent)?"
-            : "Discard changes to \(files.count) files?"
-        alert.informativeText = "This cannot be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn {
-            Task { await viewModel.discardFiles(files) }
-        }
     }
 
     // MARK: - File list
@@ -165,16 +151,9 @@ struct WorkingTreeView: View {
                                        })
                     }
                 } header: {
-                    let checkedStaged = selectedStagedFiles(in: status)
                     sectionHeader("Staged", count: stagedFiles.count) {
-                        HStack(spacing: 8) {
-                            if checkedStaged.count > 1 {
-                                Button("Unstage Selected") { Task { await viewModel.unstageFiles(checkedStaged) } }
-                                    .buttonStyle(.borderless).font(.caption)
-                            }
-                            Button("Unstage All") { Task { await viewModel.unstageFiles(stagedFiles) } }
-                                .buttonStyle(.borderless).font(.caption)
-                        }
+                        Button("Unstage All") { Task { await viewModel.unstageFiles(stagedFiles) } }
+                            .buttonStyle(.borderless).font(.caption)
                     }
                 }
             }
@@ -191,19 +170,9 @@ struct WorkingTreeView: View {
                                        })
                     }
                 } header: {
-                    let discardable = selectedUnstagedFiles(in: status)
                     sectionHeader("Changes", count: unstagedFiles.count) {
-                        HStack(spacing: 8) {
-                            if discardable.count > 1 {
-                                Button("Discard") { confirmDiscardSelected(in: status) }
-                                    .buttonStyle(.borderless).font(.caption)
-                                    .foregroundStyle(.red)
-                                Button("Stage Selected") { Task { await viewModel.stageFiles(discardable) } }
-                                    .buttonStyle(.borderless).font(.caption)
-                            }
-                            Button("Stage All") { Task { await viewModel.stageAll() } }
-                                .buttonStyle(.borderless).font(.caption)
-                        }
+                        Button("Stage All") { Task { await viewModel.stageAll() } }
+                            .buttonStyle(.borderless).font(.caption)
                     }
                 }
             }

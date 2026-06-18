@@ -814,49 +814,36 @@ struct CountBadge: View {
     }
 }
 
-/// A dismissible error card. Shown over the content area (not the sidebar), with the full
-/// message in a scrollable region so long git output stays readable and bounded.
+/// A dismissible error banner. A full-width strip matching OperationBanner's style (light-red
+/// tint + bottom rule), with a trailing close button to dismiss it.
 private struct ErrorBanner: View {
     let message: String
     var onDismiss: (() -> Void)? = nil
 
-    private var messageText: some View {
-        Text(message)
-            .font(.callout)
-            .foregroundStyle(Color(.sRGB, red: 0.55, green: 0.0, blue: 0.0)) // dark red
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    private let darkRed = Color(.sRGB, red: 0.55, green: 0.0, blue: 0.0)
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.octagon.fill")
-                .foregroundStyle(.red)
-                .font(.title3)
-            messageText // sizes to the text, so the card hugs its content
+            Image(systemName: "exclamationmark.octagon.fill").foregroundStyle(.red)
+            Text(message)
+                .foregroundStyle(darkRed)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 10)
             if let onDismiss {
                 Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.callout.weight(.semibold))
+                    Image(systemName: "xmark").font(.callout.weight(.semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color(.sRGB, red: 0.55, green: 0.0, blue: 0.0)) // dark red
+                .foregroundStyle(darkRed)
                 .help("Dismiss")
             }
         }
-        .padding(12)
-        .background {
-            // Opaque base + red tint so content doesn't show through. Shadow on the shape only,
-            // so it doesn't also shadow the text.
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .textBackgroundColor))
-                .overlay(RoundedRectangle(cornerRadius: 10).fill(.red.opacity(0.12)))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.red.opacity(0.45)))
-                .shadow(radius: 8, y: 2)
-        }
-        .frame(maxWidth: 620)
-        .padding(12)
+        .font(.callout)
+        .padding(8)
+        .frame(maxWidth: .infinity)
+        .background(.red.opacity(0.15))
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(.red.opacity(0.4)), alignment: .bottom)
     }
 }
 

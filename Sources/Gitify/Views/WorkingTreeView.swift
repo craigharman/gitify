@@ -282,12 +282,14 @@ private struct SplitCommitButton: View {
                     if !commitAndPush { Label("Commit", systemImage: "checkmark") }
                     else { Text("Commit") }
                 }
+                .tint(nil)
                 Button {
                     onSetMode(true)
                 } label: {
                     if commitAndPush { Label("Commit & Push", systemImage: "checkmark") }
                     else { Text("Commit & Push") }
                 }
+                .tint(nil)
             } label: {
                 Text("")
             }

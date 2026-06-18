@@ -2,7 +2,8 @@ import SwiftUI
 import GitKit
 
 /// Sections available within a repository, mirroring the left rail in the mockups.
-enum WorkspaceSection: Hashable {
+/// Codable so the current selection can be persisted and restored across launches.
+enum WorkspaceSection: Hashable, Codable {
     case overview
     case changes
     case history
@@ -19,13 +20,20 @@ enum WorkspaceSection: Hashable {
 struct RepositoryWorkspaceView: View {
     let ref: RepositoryRef
     @State private var viewModel: RepositoryViewModel
-    @State private var section: WorkspaceSection = .changes
+    @State private var section: WorkspaceSection
     @State private var integrationSheet: IntegrationSheet?
     @State private var showSettings = false
+
+    // Per-repository key for the last-selected section.
+    private var sectionKey: String { SidebarDefaults.sectionKey(ref.path) }
 
     init(ref: RepositoryRef) {
         self.ref = ref
         _viewModel = State(initialValue: RepositoryViewModel(ref: ref))
+        // Restore the section that was open for this repository last time, defaulting to Changes.
+        let saved = UserDefaults.standard.data(forKey: SidebarDefaults.sectionKey(ref.path))
+            .flatMap { try? JSONDecoder().decode(WorkspaceSection.self, from: $0) }
+        _section = State(initialValue: saved ?? .changes)
     }
 
     var body: some View {
@@ -36,6 +44,11 @@ struct RepositoryWorkspaceView: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(sectionTitle) // current view name, shown over the content
+        }
+        .onChange(of: section) { _, new in
+            if let data = try? JSONEncoder().encode(new) {
+                UserDefaults.standard.set(data, forKey: sectionKey)
+            }
         }
         .background(TitlebarBrand())
         .toolbar {
@@ -80,7 +93,7 @@ struct RepositoryWorkspaceView: View {
         }
         .sheet(item: $integrationSheet) { sheet in
             switch sheet {
-            case .merge(let branch): MergeSheet(viewModel: viewModel, branch: branch)
+            case .merge(let source, let target): MergeSheet(viewModel: viewModel, source: source, target: target)
             case .rebase(let branch): RebaseSheet(viewModel: viewModel, branch: branch)
             }
         }
@@ -126,9 +139,11 @@ struct RepositoryWorkspaceView: View {
             Button("New Branch…") { promptNewBranch() }
             Divider()
             Button("Merge into Current Branch…") {
-                if let target = others.first?.name { integrationSheet = .merge(target) }
+                if let source = others.first?.name, let current = viewModel.currentBranch?.name {
+                    integrationSheet = .merge(source: source, target: current)
+                }
             }
-            .disabled(others.isEmpty)
+            .disabled(others.isEmpty || viewModel.currentBranch == nil)
             Button("Rebase Current Branch…") {
                 if let target = others.first?.name { integrationSheet = .rebase(target) }
             }
@@ -304,11 +319,11 @@ private struct OperationOverlay: View {
 
 /// A merge/rebase dialog to present, parameterized by the selected branch.
 private enum IntegrationSheet: Identifiable {
-    case merge(String)
+    case merge(source: String, target: String)
     case rebase(String)
     var id: String {
         switch self {
-        case .merge(let b): "merge:\(b)"
+        case .merge(let s, let t): "merge:\(s)->\(t)"
         case .rebase(let b): "rebase:\(b)"
         }
     }
@@ -321,9 +336,49 @@ private struct WorkspaceRail: View {
     @Binding var section: WorkspaceSection
     @Binding var integrationSheet: IntegrationSheet?
 
+    // Titles of collapsed top-level sections, seeded from and persisted to UserDefaults so the
+    // sidebar reopens with the same sections expanded/collapsed as last time.
+    @State private var collapsedSections: Set<String>
+    private let sectionsKey: String
+
+    // Collapsed branch-tree folders (full paths), kept separately for local and remote and
+    // persisted, so folders reopen the way they were left.
+    @State private var collapsedLocalFolders: Set<String>
+    @State private var collapsedRemoteFolders: Set<String>
+    private let localFoldersKey: String
+    private let remoteFoldersKey: String
+
+    init(viewModel: RepositoryViewModel, section: Binding<WorkspaceSection>,
+         integrationSheet: Binding<IntegrationSheet?>) {
+        self.viewModel = viewModel
+        self._section = section
+        self._integrationSheet = integrationSheet
+        let path = viewModel.ref.path
+        let key = SidebarDefaults.sectionsKey(path)
+        self.sectionsKey = key
+        self._collapsedSections = State(initialValue: Set(UserDefaults.standard.stringArray(forKey: key) ?? []))
+        let localKey = SidebarDefaults.collapsedKey(path, isRemote: false)
+        let remoteKey = SidebarDefaults.collapsedKey(path, isRemote: true)
+        self.localFoldersKey = localKey
+        self.remoteFoldersKey = remoteKey
+        self._collapsedLocalFolders = State(initialValue: Set(UserDefaults.standard.stringArray(forKey: localKey) ?? []))
+        self._collapsedRemoteFolders = State(initialValue: Set(UserDefaults.standard.stringArray(forKey: remoteKey) ?? []))
+    }
+
+    /// A binding to a section's expanded state, backed by `collapsedSections` and persisted.
+    private func expanded(_ title: String) -> Binding<Bool> {
+        Binding(
+            get: { !collapsedSections.contains(title) },
+            set: { isExpanded in
+                if isExpanded { collapsedSections.remove(title) } else { collapsedSections.insert(title) }
+                UserDefaults.standard.set(Array(collapsedSections), forKey: sectionsKey)
+            }
+        )
+    }
+
     var body: some View {
         List(selection: $section) {
-            Section("Repository") {
+            Section("Repository", isExpanded: expanded("Repository")) {
                 Label("Overview", systemImage: "info.circle").tag(WorkspaceSection.overview)
                 Label {
                     HStack {
@@ -365,14 +420,15 @@ private struct WorkspaceRail: View {
                 }
             }
 
-            Section("Local") {
+            Section("Local", isExpanded: expanded("Local")) {
                 // Branches with "/" in their name are grouped into expandable folders.
                 ForEach(BranchNode.tree(from: viewModel.localBranches)) { node in
-                    BranchTreeNode(node: node, viewModel: viewModel, integrationSheet: $integrationSheet)
+                    BranchTreeNode(node: node, viewModel: viewModel, integrationSheet: $integrationSheet,
+                                   collapsedFolders: $collapsedLocalFolders, collapsedKey: localFoldersKey)
                 }
             }
 
-            Section("Remote") {
+            Section("Remote", isExpanded: expanded("Remote")) {
                 if viewModel.remoteBranches.isEmpty {
                     Label("Remote Branches", systemImage: "cloud").tag(WorkspaceSection.remotes)
                         .contextMenu { remoteMenu }
@@ -382,14 +438,15 @@ private struct WorkspaceRail: View {
                     let remotes = viewModel.remoteBranches.filter { !$0.name.hasSuffix("/HEAD") }
                     ForEach(BranchNode.tree(from: remotes)) { node in
                         BranchTreeNode(node: node, viewModel: viewModel,
-                                       integrationSheet: $integrationSheet, isRemote: true, folderIcon: "cloud")
+                                       integrationSheet: $integrationSheet, isRemote: true, folderIcon: "cloud",
+                                       collapsedFolders: $collapsedRemoteFolders, collapsedKey: remoteFoldersKey)
                     }
                 }
             }
-            Section("Tags") {
+            Section("Tags", isExpanded: expanded("Tags")) {
                 Label("Tags", systemImage: "tag").tag(WorkspaceSection.tags)
             }
-            Section("Reflog") {
+            Section("Reflog", isExpanded: expanded("Reflog")) {
                 Label("Reflog", systemImage: "clock.arrow.circlepath").tag(WorkspaceSection.reflog)
             }
         }
@@ -478,7 +535,21 @@ private struct BranchTreeNode: View {
     @Binding var integrationSheet: IntegrationSheet?
     var isRemote = false
     var folderIcon = "folder"
-    @State private var expanded = true
+    // Collapsed folder ids (full paths) shared across the tree and persisted, so folders reopen
+    // the way they were left. The key differs for local vs remote (see SidebarDefaults).
+    @Binding var collapsedFolders: Set<String>
+    let collapsedKey: String
+
+    /// A binding to this folder's expanded state, backed by `collapsedFolders` and persisted.
+    private var folderExpanded: Binding<Bool> {
+        Binding(
+            get: { !collapsedFolders.contains(node.id) },
+            set: { isExpanded in
+                if isExpanded { collapsedFolders.remove(node.id) } else { collapsedFolders.insert(node.id) }
+                UserDefaults.standard.set(Array(collapsedFolders), forKey: collapsedKey)
+            }
+        )
+    }
 
     var body: some View {
         if let ref = node.ref {
@@ -503,11 +574,12 @@ private struct BranchTreeNode: View {
                 }
             }
         } else {
-            DisclosureGroup(isExpanded: $expanded) {
+            DisclosureGroup(isExpanded: folderExpanded) {
                 // Nested folders always use the folder icon (only the remote root is a cloud).
                 ForEach(node.children) { child in
                     BranchTreeNode(node: child, viewModel: viewModel,
-                                   integrationSheet: $integrationSheet, isRemote: isRemote)
+                                   integrationSheet: $integrationSheet, isRemote: isRemote,
+                                   collapsedFolders: $collapsedFolders, collapsedKey: collapsedKey)
                 }
             } label: {
                 Label(node.name, systemImage: folderIcon)
@@ -546,9 +618,21 @@ private struct BranchContextMenu: View {
         if !branch.isHead {
             Button("Checkout") { Task { await viewModel.checkout(branch.name) } }
             Divider()
+            // Merge this branch into the one you're on.
             Button("Merge into “\(viewModel.currentBranch?.name ?? "current")”…") {
-                integrationSheet = .merge(branch.name)
+                if let current = viewModel.currentBranch?.name {
+                    integrationSheet = .merge(source: branch.name, target: current)
+                }
             }
+            .disabled(viewModel.currentBranch == nil)
+            // Reverse direction: merge the branch you're on into this one (checks it out first),
+            // so you can merge e.g. a feature into main without switching branches first.
+            Button("Merge “\(viewModel.currentBranch?.name ?? "current")” into “\(branch.name)”…") {
+                if let current = viewModel.currentBranch?.name {
+                    integrationSheet = .merge(source: current, target: branch.name)
+                }
+            }
+            .disabled(viewModel.currentBranch == nil)
             Button("Rebase “\(viewModel.currentBranch?.name ?? "current")” onto This…") {
                 integrationSheet = .rebase(branch.name)
             }

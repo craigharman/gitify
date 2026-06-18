@@ -5,8 +5,9 @@
       "bump-minor-pre-major": true,
       "extra-files": [
         {
-          "type": "generic",
-          "path": "Resources/Info.plist"
+          "type": "xml",
+          "path": "Resources/Info.plist",
+          "xpath": "//dict/string[preceding-sibling::key[1]='CFBundleShortVersionString']"
         }
       ]
     }

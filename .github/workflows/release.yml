@@ -40,5 +40,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          ls -la build/
           gh release upload "${{ needs.release-please.outputs.tag_name }}" \
             "build/Gitify-${{ needs.release-please.outputs.version }}.dmg"

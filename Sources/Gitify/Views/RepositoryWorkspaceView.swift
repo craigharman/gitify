@@ -69,6 +69,7 @@ struct RepositoryWorkspaceView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle(sectionTitle)
+            .background(.background)
         }
         .onChange(of: section) { _, new in
             if let data = try? JSONEncoder().encode(new) {

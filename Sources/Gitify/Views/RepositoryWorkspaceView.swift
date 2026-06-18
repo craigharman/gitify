@@ -23,6 +23,7 @@ struct RepositoryWorkspaceView: View {
     @State private var section: WorkspaceSection
     @State private var integrationSheet: IntegrationSheet?
     @State private var showSettings = false
+    @State private var bannerHeight: CGFloat = 0
 
     // Per-repository key for the last-selected section.
     private var sectionKey: String { SidebarDefaults.sectionKey(ref.path) }
@@ -41,22 +42,27 @@ struct RepositoryWorkspaceView: View {
             WorkspaceRail(viewModel: viewModel, section: $section, integrationSheet: $integrationSheet)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
         } detail: {
+            // Banners sit in-flow above the content (not as an overlay) so they push the panel
+            // down instead of covering it. The sidebar is unaffected — this is the detail column.
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(sectionTitle) // current view name, shown over the content
-                // Banners sit over the content area only (not the sidebar), just under the toolbar.
+                // Reserve space equal to the banner's measured height so content (incl. scroll
+                // views) is pushed down and never overlaps the banner.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: bannerHeight)
+                }
+                // Render the banners floating at the top of the content area (the sidebar is a
+                // separate column, so it's unaffected); measure their height for the inset above.
                 .overlay(alignment: .top) {
-                    VStack(spacing: 8) {
-                        if let operation = viewModel.operation {
-                            OperationBanner(operation: operation) {
-                                Task { await viewModel.abortOperation() }
+                    banners
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear
+                                    .onAppear { bannerHeight = geo.size.height }
+                                    .onChange(of: geo.size.height) { _, h in bannerHeight = h }
                             }
-                        }
-                        if let error = viewModel.loadError {
-                            ErrorBanner(message: error) { viewModel.dismissError() }
-                        }
-                    }
-                    .padding(.top, 8)
+                        )
                 }
         }
         .onChange(of: section) { _, new in
@@ -118,6 +124,21 @@ struct RepositoryWorkspaceView: View {
             if viewModel.isBusy {
                 OperationOverlay(title: viewModel.operationTitle ?? "Working",
                                  detail: viewModel.operationProgress)
+            }
+        }
+    }
+
+    /// Operation/error banners shown at the top of the content area.
+    @ViewBuilder
+    private var banners: some View {
+        VStack(spacing: 0) {
+            if let operation = viewModel.operation {
+                OperationBanner(operation: operation) {
+                    Task { await viewModel.abortOperation() }
+                }
+            }
+            if let error = viewModel.loadError {
+                ErrorBanner(message: error) { viewModel.dismissError() }
             }
         }
     }
@@ -829,14 +850,14 @@ private struct ErrorBanner: View {
             }
         }
         .padding(12)
-        // The shadow lives on the background shape only — applying it to the whole card would
-        // also shadow the text. Opaque base + red tint so content doesn't show through.
         .background {
+            // Opaque base + red tint so content doesn't show through. Shadow on the shape only,
+            // so it doesn't also shadow the text.
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color(nsColor: .textBackgroundColor))
                 .overlay(RoundedRectangle(cornerRadius: 10).fill(.red.opacity(0.12)))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.red.opacity(0.45)))
-                .shadow(radius: 10, y: 3)
+                .shadow(radius: 8, y: 2)
         }
         .frame(maxWidth: 620)
         .padding(12)

@@ -232,10 +232,95 @@ struct StatusBadge: View {
     }
 }
 
+/// A split button: primary action on the left, chevron dropdown on the right, drawn as a
+/// single cohesive pill using the accent color so both halves always match.
+private struct SplitCommitButton: View {
+    @Bindable var viewModel: RepositoryViewModel
+    @Binding var commitAndPush: Bool
+    let primaryLabel: String
+    let onSetMode: (Bool) -> Void
+
+    @State private var hovering = false
+
+    private var disabled: Bool { !viewModel.canCommit }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Primary action
+            Button {
+                Task {
+                    await viewModel.commit()
+                    if commitAndPush && viewModel.loadError == nil {
+                        await viewModel.push()
+                    }
+                }
+            } label: {
+                Group {
+                    if viewModel.isCommitting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(primaryLabel)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.return, modifiers: [.command])
+
+            // Thin separator
+            Rectangle()
+                .fill(.white.opacity(0.3))
+                .frame(width: 1)
+                .padding(.vertical, 4)
+
+            // Dropdown mode picker
+            Menu {
+                Button {
+                    onSetMode(false)
+                } label: {
+                    if !commitAndPush { Label("Commit", systemImage: "checkmark") }
+                    else { Text("Commit") }
+                }
+                Button {
+                    onSetMode(true)
+                } label: {
+                    if commitAndPush { Label("Commit & Push", systemImage: "checkmark") }
+                    else { Text("Commit & Push") }
+                }
+            } label: {
+                Text("")
+            }
+            .menuStyle(.borderlessButton)
+            .tint(.white)
+            .fixedSize()
+            .padding(.trailing, 4)
+        }
+        .foregroundStyle(.white)
+        .background(RoundedRectangle(cornerRadius: 5).fill(disabled ? Color.accentColor.opacity(0.5) : Color.accentColor))
+        .fixedSize()
+        .disabled(disabled)
+    }
+}
+
 /// Commit message editor with Commit / Amend controls.
 private struct CommitBox: View {
     @Bindable var viewModel: RepositoryViewModel
     @FocusState private var editorFocused: Bool
+    @State private var commitAndPush: Bool
+
+    init(viewModel: RepositoryViewModel) {
+        self.viewModel = viewModel
+        let key = SidebarDefaults.commitAndPushKey(viewModel.ref.path)
+        _commitAndPush = State(initialValue: UserDefaults.standard.bool(forKey: key))
+    }
+
+    private var primaryLabel: String {
+        if viewModel.amendMode {
+            return commitAndPush ? "Amend & Push" : "Amend Commit"
+        }
+        return commitAndPush ? "Commit & Push" : "Commit"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -269,20 +354,16 @@ private struct CommitBox: View {
                     .toggleStyle(.checkbox)
                     .font(.caption)
                 Spacer()
-                Button {
-                    Task { await viewModel.commit() }
-                } label: {
-                    if viewModel.isCommitting {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text(viewModel.amendMode ? "Amend Commit" : "Commit")
-                    }
-                }
-                .keyboardShortcut(.return, modifiers: [.command])
-                .buttonStyle(.borderedProminent)
-                .disabled(!viewModel.canCommit)
+                SplitCommitButton(viewModel: viewModel, commitAndPush: $commitAndPush,
+                                  primaryLabel: primaryLabel, onSetMode: setCommitAndPush)
             }
         }
         .padding(10)
+    }
+
+    private func setCommitAndPush(_ value: Bool) {
+        commitAndPush = value
+        let key = SidebarDefaults.commitAndPushKey(viewModel.ref.path)
+        UserDefaults.standard.set(value, forKey: key)
     }
 }

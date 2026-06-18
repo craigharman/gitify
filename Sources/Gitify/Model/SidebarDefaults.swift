@@ -9,6 +9,7 @@ enum SidebarDefaults {
     static func collapsedKey(_ repoPath: String, isRemote: Bool) -> String {
         "sidebar.collapsed.\(isRemote ? "remote" : "local").\(repoPath)"
     }
+    static func commitAndPushKey(_ repoPath: String) -> String { "sidebar.commitAndPush.\(repoPath)" }
 
     /// Clears every persisted sidebar key for a repository (used when it's removed from Gitify).
     static func removeAll(for repoPath: String) {
@@ -17,5 +18,6 @@ enum SidebarDefaults {
         defaults.removeObject(forKey: sectionsKey(repoPath))
         defaults.removeObject(forKey: collapsedKey(repoPath, isRemote: false))
         defaults.removeObject(forKey: collapsedKey(repoPath, isRemote: true))
+        defaults.removeObject(forKey: commitAndPushKey(repoPath))
     }
 }

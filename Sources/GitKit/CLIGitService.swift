@@ -73,7 +73,49 @@ public struct CLIGitService: GitService {
             "for-each-ref", "--format=\(format)",
             "refs/heads", "refs/remotes", "refs/tags",
         ])
-        return RefParser.parse(output)
+        var parsed = RefParser.parse(output)
+
+        // For local branches without a configured upstream, try to infer ahead/behind
+        // by comparing against a same-named remote branch (e.g. origin/<branch>), or
+        // falling back to the remote's default branch (origin/HEAD).
+        let remoteNames = Set(parsed.filter { $0.kind == .remoteBranch }.map { $0.name })
+        let defaultRemoteRef = try? await runner.runString(
+            ["symbolic-ref", "refs/remotes/origin/HEAD"]
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        for i in parsed.indices where parsed[i].kind == .localBranch && parsed[i].upstream == nil {
+            let name = parsed[i].name
+            // Prefer a same-named remote branch, then fall back to origin/HEAD.
+            let remoteRef: String
+            if remoteNames.contains("origin/\(name)") {
+                remoteRef = "refs/remotes/origin/\(name)"
+            } else if let r = remoteNames.first(where: { $0.hasSuffix("/\(name)") }) {
+                remoteRef = "refs/remotes/\(r)"
+            } else if let def = defaultRemoteRef, !def.isEmpty {
+                remoteRef = def
+            } else {
+                continue
+            }
+            if let (ahead, behind) = try? await revListCount(
+                left: remoteRef, right: "refs/heads/\(name)"
+            ) {
+                parsed[i] = Ref(id: parsed[i].id, kind: parsed[i].kind, name: name,
+                                targetSHA: parsed[i].targetSHA, isHead: parsed[i].isHead,
+                                upstream: nil, ahead: ahead, behind: behind)
+            }
+        }
+
+        return parsed
+    }
+
+    /// Returns (behind, ahead) counts between two refs using `rev-list --count --left-right`.
+    private func revListCount(left: String, right: String) async throws -> (Int, Int)? {
+        let output = try await runner.runString([
+            "rev-list", "--count", "--left-right", "\(left)...\(right)",
+        ])
+        let parts = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\t")
+        guard parts.count == 2, let l = Int(parts[0]), let r = Int(parts[1]) else { return nil }
+        return (r, l) // right = ahead, left = behind
     }
 
     // MARK: - Worktrees

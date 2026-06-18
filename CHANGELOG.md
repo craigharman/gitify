@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/craigharman/gitify/compare/v1.4.0...v1.4.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* versioning system ([f8899ee](https://github.com/craigharman/gitify/commit/f8899eedd958da6b8bd5fee1c44f7f6fb8469305))
+
 ## [1.4.0](https://github.com/craigharman/gitify/compare/v1.3.0...v1.4.0) (2026-06-18)
 
 

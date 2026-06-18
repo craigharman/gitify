@@ -2,7 +2,8 @@ import SwiftUI
 import GitKit
 
 /// Sections available within a repository, mirroring the left rail in the mockups.
-enum WorkspaceSection: Hashable {
+/// Codable so the current selection can be persisted and restored across launches.
+enum WorkspaceSection: Hashable, Codable {
     case overview
     case changes
     case history
@@ -19,13 +20,20 @@ enum WorkspaceSection: Hashable {
 struct RepositoryWorkspaceView: View {
     let ref: RepositoryRef
     @State private var viewModel: RepositoryViewModel
-    @State private var section: WorkspaceSection = .changes
+    @State private var section: WorkspaceSection
     @State private var integrationSheet: IntegrationSheet?
     @State private var showSettings = false
+
+    // Per-repository key for the last-selected section.
+    private var sectionKey: String { SidebarDefaults.sectionKey(ref.path) }
 
     init(ref: RepositoryRef) {
         self.ref = ref
         _viewModel = State(initialValue: RepositoryViewModel(ref: ref))
+        // Restore the section that was open for this repository last time, defaulting to Changes.
+        let saved = UserDefaults.standard.data(forKey: SidebarDefaults.sectionKey(ref.path))
+            .flatMap { try? JSONDecoder().decode(WorkspaceSection.self, from: $0) }
+        _section = State(initialValue: saved ?? .changes)
     }
 
     var body: some View {
@@ -36,6 +44,11 @@ struct RepositoryWorkspaceView: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(sectionTitle) // current view name, shown over the content
+        }
+        .onChange(of: section) { _, new in
+            if let data = try? JSONEncoder().encode(new) {
+                UserDefaults.standard.set(data, forKey: sectionKey)
+            }
         }
         .background(TitlebarBrand())
         .toolbar {
@@ -321,9 +334,35 @@ private struct WorkspaceRail: View {
     @Binding var section: WorkspaceSection
     @Binding var integrationSheet: IntegrationSheet?
 
+    // Titles of collapsed top-level sections, seeded from and persisted to UserDefaults so the
+    // sidebar reopens with the same sections expanded/collapsed as last time.
+    @State private var collapsedSections: Set<String>
+    private let sectionsKey: String
+
+    init(viewModel: RepositoryViewModel, section: Binding<WorkspaceSection>,
+         integrationSheet: Binding<IntegrationSheet?>) {
+        self.viewModel = viewModel
+        self._section = section
+        self._integrationSheet = integrationSheet
+        let key = SidebarDefaults.sectionsKey(viewModel.ref.path)
+        self.sectionsKey = key
+        self._collapsedSections = State(initialValue: Set(UserDefaults.standard.stringArray(forKey: key) ?? []))
+    }
+
+    /// A binding to a section's expanded state, backed by `collapsedSections` and persisted.
+    private func expanded(_ title: String) -> Binding<Bool> {
+        Binding(
+            get: { !collapsedSections.contains(title) },
+            set: { isExpanded in
+                if isExpanded { collapsedSections.remove(title) } else { collapsedSections.insert(title) }
+                UserDefaults.standard.set(Array(collapsedSections), forKey: sectionsKey)
+            }
+        )
+    }
+
     var body: some View {
         List(selection: $section) {
-            Section("Repository") {
+            Section("Repository", isExpanded: expanded("Repository")) {
                 Label("Overview", systemImage: "info.circle").tag(WorkspaceSection.overview)
                 Label {
                     HStack {
@@ -365,7 +404,7 @@ private struct WorkspaceRail: View {
                 }
             }
 
-            Section("Local") {
+            Section("Local", isExpanded: expanded("Local")) {
                 // Branches with "/" in their name are grouped into expandable folders.
                 // Rendered as a single compact row (see BranchTreeList) so leaves sit close.
                 BranchTreeList(nodes: BranchNode.tree(from: viewModel.localBranches),
@@ -373,7 +412,7 @@ private struct WorkspaceRail: View {
                                integrationSheet: $integrationSheet)
             }
 
-            Section("Remote") {
+            Section("Remote", isExpanded: expanded("Remote")) {
                 if viewModel.remoteBranches.isEmpty {
                     Label("Remote Branches", systemImage: "cloud").tag(WorkspaceSection.remotes)
                         .contextMenu { remoteMenu }
@@ -386,10 +425,10 @@ private struct WorkspaceRail: View {
                                    isRemote: true, folderIcon: "cloud")
                 }
             }
-            Section("Tags") {
+            Section("Tags", isExpanded: expanded("Tags")) {
                 Label("Tags", systemImage: "tag").tag(WorkspaceSection.tags)
             }
-            Section("Reflog") {
+            Section("Reflog", isExpanded: expanded("Reflog")) {
                 Label("Reflog", systemImage: "clock.arrow.circlepath").tag(WorkspaceSection.reflog)
             }
         }
@@ -484,13 +523,44 @@ private struct BranchTreeList: View {
     // Expansion state lives here (not per-row) so toggling re-keys the row's identity below,
     // forcing the NSTableView-backed sidebar to re-measure the row's height. Without that, the
     // single tree row keeps its stale (expanded) height and the shrunken content sits centered.
-    @State private var collapsed: Set<String> = []
+    // Seeded from UserDefaults so the tree reopens with the same folders collapsed as last time.
+    @State private var collapsed: Set<String>
+    // Per-repository, per-tree key under which the collapsed folder set is persisted.
+    private let persistenceKey: String
+
+    init(nodes: [BranchNode], viewModel: RepositoryViewModel,
+         selection: Binding<WorkspaceSection>, integrationSheet: Binding<IntegrationSheet?>,
+         isRemote: Bool = false, folderIcon: String = "folder") {
+        self.nodes = nodes
+        self.viewModel = viewModel
+        self._selection = selection
+        self._integrationSheet = integrationSheet
+        self.isRemote = isRemote
+        self.folderIcon = folderIcon
+        let key = SidebarDefaults.collapsedKey(viewModel.ref.path, isRemote: isRemote)
+        self.persistenceKey = key
+        let saved = UserDefaults.standard.stringArray(forKey: key) ?? []
+        self._collapsed = State(initialValue: Set(saved))
+    }
+
+    // Mutating through this binding persists on every toggle. A plain `.onChange(of:)` can't be
+    // used here: it sits inside the `.id(collapsed)` boundary below, so each change recreates the
+    // subtree and resets onChange's baseline — it would never fire.
+    private var collapsedBinding: Binding<Set<String>> {
+        Binding(
+            get: { collapsed },
+            set: { new in
+                collapsed = new
+                UserDefaults.standard.set(Array(new), forKey: persistenceKey)
+            }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(nodes) { node in
                 BranchTreeRow(node: node, viewModel: viewModel, selection: $selection,
-                              integrationSheet: $integrationSheet, collapsed: $collapsed,
+                              integrationSheet: $integrationSheet, collapsed: collapsedBinding,
                               isRemote: isRemote, folderIcon: folderIcon, depth: 0)
             }
         }
@@ -553,7 +623,10 @@ private struct BranchTreeRow: View {
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isSelected ? Color.accentColor : .clear)
-                    .padding(.horizontal, 6)
+                    // Extend the highlight closer to the sidebar's left edge; keep a
+                    // small trailing inset so it doesn't touch the right edge.
+                    .padding(.leading, 0)
+                    .padding(.trailing, 6)
             )
             .contentShape(Rectangle())
             .onTapGesture { selection = .branch(ref.name) }

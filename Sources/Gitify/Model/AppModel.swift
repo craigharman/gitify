@@ -158,6 +158,8 @@ final class AppModel {
     func remove(_ ref: RepositoryRef) {
         repositories.removeAll { $0.id == ref.id }
         store.save(repositories)
+        // Discard the repository's persisted sidebar state so it doesn't linger in UserDefaults.
+        SidebarDefaults.removeAll(for: ref.path)
         if selectedRepositoryID == ref.id {
             selectedRepositoryID = repositories.first?.id
         }

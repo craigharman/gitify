@@ -30,17 +30,31 @@ struct HistoryView: View {
                 }
             }
             .frame(minWidth: 380, idealWidth: 480, maxHeight: .infinity)
-            Group {
-                if let selected = viewModel.commits.first(where: { $0.id == selection }) {
-                    CommitDetailView(commit: selected, viewModel: viewModel)
-                        .id(selected.id)
-                } else {
-                    ContentUnavailableView("No Commit Selected", systemImage: "sidebar.right")
-                }
-            }
-            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+            CommitDetailPane(selection: selection, viewModel: viewModel)
+                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The inspector side of the history split: the selected commit's detail, or a placeholder.
+/// Concrete (not an inline if/else) so selection changes don't reset the dragged divider.
+private struct CommitDetailPane: View {
+    let selection: Commit.ID?
+    let viewModel: RepositoryViewModel
+
+    var body: some View {
+        // GeometryReader so the pane keeps a constant (greedy) size whether the detail or the
+        // placeholder is shown — otherwise HSplitView shifts the divider on commit selection.
+        GeometryReader { _ in
+            if let selected = viewModel.commits.first(where: { $0.id == selection }) {
+                CommitDetailView(commit: selected, viewModel: viewModel)
+                    .id(selected.id)
+            } else {
+                ContentUnavailableView("No Commit Selected", systemImage: "sidebar.right")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 }
 

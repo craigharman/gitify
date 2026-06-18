@@ -39,7 +39,7 @@ struct WorkingTreeView: View {
                     }
                     .frame(minWidth: 300, idealWidth: 360, maxHeight: .infinity)
 
-                    diffPane
+                    DiffPane(viewModel: viewModel)
                         .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -102,20 +102,6 @@ struct WorkingTreeView: View {
         .listStyle(.inset)
     }
 
-    @ViewBuilder
-    private var diffPane: some View {
-        if let diff = viewModel.currentDiff {
-            DiffView(diff: diff,
-                     actionLabel: viewModel.selectedStaged ? "Unstage Hunk" : "Stage Hunk",
-                     lineActionLabel: viewModel.selectedStaged ? "Unstage Lines" : "Stage Lines",
-                     onApplyHunk: { hunk in Task { await viewModel.applyHunk(hunk) } },
-                     onApplyLines: { hunk, lines in Task { await viewModel.applyLines(hunk, lines) } })
-        } else {
-            ContentUnavailableView("No File Selected", systemImage: "doc.text.magnifyingglass",
-                                   description: Text("Select a file to view its changes."))
-        }
-    }
-
     private func sectionHeader(_ title: String, count: Int, @ViewBuilder action: () -> some View) -> some View {
         HStack {
             Text("\(title) (\(count))").font(.caption.bold()).foregroundStyle(.secondary)
@@ -126,6 +112,32 @@ struct WorkingTreeView: View {
 
     private func unstageAll(_ files: [FileStatus]) async {
         for file in files { await viewModel.unstage(file) }
+    }
+}
+
+/// The diff side of the working-tree split: the selected file's diff, or a placeholder.
+/// A concrete view so the conditional doesn't change the split child's identity (which would
+/// reset the user's dragged divider on every selection).
+private struct DiffPane: View {
+    let viewModel: RepositoryViewModel
+
+    var body: some View {
+        // Wrapped in a GeometryReader so the pane reports the same (greedy, flexible) size whether
+        // the diff or the placeholder is shown — otherwise HSplitView redistributes width on the
+        // first selection (DiffView is itself a GeometryReader; the bare placeholder is not).
+        GeometryReader { _ in
+            if let diff = viewModel.currentDiff {
+                DiffView(diff: diff,
+                         actionLabel: viewModel.selectedStaged ? "Unstage Hunk" : "Stage Hunk",
+                         lineActionLabel: viewModel.selectedStaged ? "Unstage Lines" : "Stage Lines",
+                         onApplyHunk: { hunk in Task { await viewModel.applyHunk(hunk) } },
+                         onApplyLines: { hunk, lines in Task { await viewModel.applyLines(hunk, lines) } })
+            } else {
+                ContentUnavailableView("No File Selected", systemImage: "doc.text.magnifyingglass",
+                                       description: Text("Select a file to view its changes."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 }
 
@@ -267,6 +279,7 @@ private struct CommitBox: View {
                     }
                 }
                 .keyboardShortcut(.return, modifiers: [.command])
+                .buttonStyle(.borderedProminent)
                 .disabled(!viewModel.canCommit)
             }
         }

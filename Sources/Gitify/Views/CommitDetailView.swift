@@ -55,7 +55,7 @@ struct ChangesetDiffPane: View {
 
     var body: some View {
         VSplitView {
-            Group {
+            GeometryReader { _ in
                 if loading {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -64,16 +64,8 @@ struct ChangesetDiffPane: View {
             }
             .frame(maxWidth: .infinity, minHeight: 140)
 
-            Group {
-                if let fileDiff {
-                    DiffView(diff: fileDiff)
-                } else {
-                    ContentUnavailableView("No File Selected", systemImage: "doc.text.magnifyingglass",
-                                           description: Text("Select a changed file to view its diff."))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 120)
+            CommitFileDiffPane(fileDiff: fileDiff)
+                .frame(maxWidth: .infinity, minHeight: 120)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: ref) { await load() }
@@ -123,6 +115,26 @@ struct ChangesetDiffPane: View {
         fileDiff = nil
         changes = await viewModel.commitChanges(ref)
         if let first = changes.first { selectedFile = first.path }
+    }
+}
+
+/// The diff side of the changeset split: the selected file's diff, or a placeholder.
+/// Concrete (not an inline if/else) so selecting a changed file doesn't reset the dragged divider.
+private struct CommitFileDiffPane: View {
+    let fileDiff: FileDiff?
+
+    var body: some View {
+        // GeometryReader so the pane keeps a constant (greedy) size whether the diff or the
+        // placeholder is shown — otherwise VSplitView shifts the divider on file selection.
+        GeometryReader { _ in
+            if let fileDiff {
+                DiffView(diff: fileDiff)
+            } else {
+                ContentUnavailableView("No File Selected", systemImage: "doc.text.magnifyingglass",
+                                       description: Text("Select a changed file to view its diff."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 }
 

@@ -29,6 +29,9 @@ final class RepositoryViewModel {
     private(set) var isLoading = false
     private(set) var loadError: String?
 
+    /// Clears the current error banner (the user dismissed it).
+    func dismissError() { loadError = nil }
+
     // Long-running network operation state (fetch/pull/push/clone).
     private(set) var operationTitle: String?
     private(set) var operationProgress: String?
@@ -384,6 +387,26 @@ final class RepositoryViewModel {
         await runIntegration("Merge") {
             try await $0.merge(branch: branch, squash: squash, noFastForward: noFastForward,
                                noCommit: noCommit, skipHooks: skipHooks)
+        }
+    }
+
+    /// Merges `source` into `target`. When `target` isn't the current branch it is checked out
+    /// first so the merge lands on it — letting you merge the branch you're on into another
+    /// (e.g. a feature into main) without manually switching first. On a clean merge, optionally
+    /// deletes the now-merged `source` branch.
+    func merge(source: String, into target: String, squash: Bool, noFastForward: Bool,
+               noCommit: Bool, skipHooks: Bool, deleteSource: Bool) async {
+        await runIntegration("Merge") { service in
+            if target != self.currentBranch?.name {
+                try await service.checkout(target)
+            }
+            try await service.merge(branch: source, squash: squash, noFastForward: noFastForward,
+                                    noCommit: noCommit, skipHooks: skipHooks)
+            // Reaching here means the merge completed (a conflicting merge throws above). Don't
+            // delete when the user chose to stop before committing — nothing is merged yet.
+            if deleteSource && !noCommit {
+                try await service.deleteBranch(name: source, force: false)
+            }
         }
     }
 

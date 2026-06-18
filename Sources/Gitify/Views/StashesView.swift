@@ -12,14 +12,8 @@ struct StashesView: View {
             HSplitView {
                 stashList
                     .frame(minWidth: 280, idealWidth: 320)
-                if let stash = viewModel.stashes.first(where: { $0.id == selection }) {
-                    ChangesetDiffPane(ref: stash.id, viewModel: viewModel)
-                        .id(stash.id)
-                        .frame(minWidth: 360, maxWidth: .infinity)
-                } else {
-                    ContentUnavailableView("No Stash Selected", systemImage: "tray.full")
-                        .frame(minWidth: 360, maxWidth: .infinity)
-                }
+                StashDetailPane(selection: selection, viewModel: viewModel)
+                    .frame(minWidth: 360, maxWidth: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -93,5 +87,26 @@ struct StashesView: View {
             message: "Save working-tree changes (including untracked). Message optional.",
             confirm: "Stash", allowEmpty: true) else { return }
         Task { await viewModel.stashChanges(message: message.isEmpty ? nil : message) }
+    }
+}
+
+/// The detail side of the stash split: the selected stash's changeset, or a placeholder.
+/// Concrete (not an inline if/else) so selection changes don't reset the dragged divider.
+private struct StashDetailPane: View {
+    let selection: Stash.ID?
+    let viewModel: RepositoryViewModel
+
+    var body: some View {
+        // GeometryReader so the pane keeps a constant (greedy) size whether the changeset or the
+        // placeholder is shown — otherwise HSplitView shifts the divider on stash selection.
+        GeometryReader { _ in
+            if let stash = viewModel.stashes.first(where: { $0.id == selection }) {
+                ChangesetDiffPane(ref: stash.id, viewModel: viewModel)
+                    .id(stash.id)
+            } else {
+                ContentUnavailableView("No Stash Selected", systemImage: "tray.full")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 }

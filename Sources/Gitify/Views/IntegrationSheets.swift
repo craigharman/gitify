@@ -80,13 +80,13 @@ struct MergeSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Merge") {
+                    dismiss()
                     Task {
                         await viewModel.merge(source: source, into: target, squash: squash,
                                               noFastForward: noFastForward, noCommit: noCommit,
                                               skipHooks: skipHooks,
                                               deleteSource: deleteSource && sourceIsLocal,
                                               pushAfterMerge: pushAfterMerge && !noCommit)
-                        dismiss()
                     }
                 }
                 .keyboardShortcut(.defaultAction)

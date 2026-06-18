@@ -387,6 +387,26 @@ final class RepositoryViewModel {
         }
     }
 
+    /// Merges `source` into `target`. When `target` isn't the current branch it is checked out
+    /// first so the merge lands on it — letting you merge the branch you're on into another
+    /// (e.g. a feature into main) without manually switching first. On a clean merge, optionally
+    /// deletes the now-merged `source` branch.
+    func merge(source: String, into target: String, squash: Bool, noFastForward: Bool,
+               noCommit: Bool, skipHooks: Bool, deleteSource: Bool) async {
+        await runIntegration("Merge") { service in
+            if target != self.currentBranch?.name {
+                try await service.checkout(target)
+            }
+            try await service.merge(branch: source, squash: squash, noFastForward: noFastForward,
+                                    noCommit: noCommit, skipHooks: skipHooks)
+            // Reaching here means the merge completed (a conflicting merge throws above). Don't
+            // delete when the user chose to stop before committing — nothing is merged yet.
+            if deleteSource && !noCommit {
+                try await service.deleteBranch(name: source, force: false)
+            }
+        }
+    }
+
     func rebase(onto branch: String) async {
         await runIntegration("Rebase") { try await $0.rebase(onto: branch) }
     }

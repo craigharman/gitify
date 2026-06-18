@@ -93,7 +93,8 @@ struct RepositoryWorkspaceView: View {
         }
         .sheet(item: $integrationSheet) { sheet in
             switch sheet {
-            case .merge(let branch): MergeSheet(viewModel: viewModel, branch: branch)
+            case .merge(let source, let target):
+                MergeSheet(viewModel: viewModel, source: source, target: target)
             case .rebase(let branch): RebaseSheet(viewModel: viewModel, branch: branch)
             }
         }
@@ -139,9 +140,11 @@ struct RepositoryWorkspaceView: View {
             Button("New Branch…") { promptNewBranch() }
             Divider()
             Button("Merge into Current Branch…") {
-                if let target = others.first?.name { integrationSheet = .merge(target) }
+                if let source = others.first?.name, let current = viewModel.currentBranch?.name {
+                    integrationSheet = .merge(source: source, target: current)
+                }
             }
-            .disabled(others.isEmpty)
+            .disabled(others.isEmpty || viewModel.currentBranch == nil)
             Button("Rebase Current Branch…") {
                 if let target = others.first?.name { integrationSheet = .rebase(target) }
             }
@@ -317,11 +320,12 @@ private struct OperationOverlay: View {
 
 /// A merge/rebase dialog to present, parameterized by the selected branch.
 private enum IntegrationSheet: Identifiable {
-    case merge(String)
+    /// Merge `source` into `target`. `target` is checked out first if it isn't current.
+    case merge(source: String, target: String)
     case rebase(String)
     var id: String {
         switch self {
-        case .merge(let b): "merge:\(b)"
+        case .merge(let s, let t): "merge:\(s)->\(t)"
         case .rebase(let b): "rebase:\(b)"
         }
     }
@@ -520,10 +524,7 @@ private struct BranchTreeList: View {
     @Binding var integrationSheet: IntegrationSheet?
     var isRemote = false
     var folderIcon = "folder"
-    // Expansion state lives here (not per-row) so toggling re-keys the row's identity below,
-    // forcing the NSTableView-backed sidebar to re-measure the row's height. Without that, the
-    // single tree row keeps its stale (expanded) height and the shrunken content sits centered.
-    // Seeded from UserDefaults so the tree reopens with the same folders collapsed as last time.
+    // Which folders are collapsed. Seeded from UserDefaults so the tree reopens the same way.
     @State private var collapsed: Set<String>
     // Per-repository, per-tree key under which the collapsed folder set is persisted.
     private let persistenceKey: String
@@ -543,9 +544,7 @@ private struct BranchTreeList: View {
         self._collapsed = State(initialValue: Set(saved))
     }
 
-    // Mutating through this binding persists on every toggle. A plain `.onChange(of:)` can't be
-    // used here: it sits inside the `.id(collapsed)` boundary below, so each change recreates the
-    // subtree and resets onChange's baseline — it would never fire.
+    /// Mutating through this binding persists the collapsed set on every toggle.
     private var collapsedBinding: Binding<Set<String>> {
         Binding(
             get: { collapsed },
@@ -556,20 +555,36 @@ private struct BranchTreeList: View {
         )
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(nodes) { node in
-                BranchTreeRow(node: node, viewModel: viewModel, selection: $selection,
-                              integrationSheet: $integrationSheet, collapsed: collapsedBinding,
-                              isRemote: isRemote, folderIcon: folderIcon, depth: 0)
+    /// A single visible row: a node plus its depth. Folders hide their descendants when collapsed.
+    private struct Row: Identifiable {
+        let node: BranchNode
+        let depth: Int
+        var id: String { node.id }
+    }
+
+    /// Flattens the tree into the rows currently visible, so each can be emitted as its own List
+    /// row — that's what makes per-leaf right-click and selection work (a single cell can't).
+    private var visibleRows: [Row] {
+        var out: [Row] = []
+        func walk(_ ns: [BranchNode], _ depth: Int) {
+            for n in ns {
+                out.append(Row(node: n, depth: depth))
+                if n.ref == nil && !collapsed.contains(n.id) { walk(n.children, depth + 1) }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .id(collapsed)
-        // The whole tree occupies one row; keep its own insets minimal so leaf spacing is
-        // driven by the rows below, not the list metric.
-        .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
+        walk(nodes, 0)
+        return out
+    }
+
+    var body: some View {
+        ForEach(visibleRows) { row in
+            BranchTreeRow(node: row.node, viewModel: viewModel, selection: $selection,
+                          integrationSheet: $integrationSheet, collapsed: collapsedBinding,
+                          isRemote: isRemote,
+                          folderIcon: row.depth == 0 ? folderIcon : "folder", depth: row.depth)
+                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                .listRowSeparator(.hidden)
+        }
     }
 }
 
@@ -630,6 +645,7 @@ private struct BranchTreeRow: View {
             )
             .contentShape(Rectangle())
             .onTapGesture { selection = .branch(ref.name) }
+            // Each branch is now its own List row, so a per-row menu targets exactly this leaf.
             .contextMenu {
                 if isRemote {
                     RemoteBranchMenu(branch: ref, viewModel: viewModel)
@@ -638,33 +654,21 @@ private struct BranchTreeRow: View {
                 }
             }
         } else {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 4) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.caption2).foregroundStyle(.secondary).frame(width: 12)
-                    Image(systemName: folderIcon).frame(width: 16)
-                    Text(node.name).lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, vpad)
-                .padding(.leading, indent)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    if expanded { collapsed.insert(node.id) } else { collapsed.remove(node.id) }
-                }
-
-                if expanded {
-                    // Nested folders always use the plain folder icon (only the top is a cloud).
-                    // A small top gap sets the children apart from the folder header.
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(node.children) { child in
-                            BranchTreeRow(node: child, viewModel: viewModel, selection: $selection,
-                                          integrationSheet: $integrationSheet, collapsed: $collapsed,
-                                          isRemote: isRemote, folderIcon: "folder", depth: depth + 1)
-                        }
-                    }
-                    .padding(.top, 4)
-                }
+            // Folder header row. Children are emitted as sibling List rows by BranchTreeList's
+            // flattening, so this renders only the header (no nested content here).
+            HStack(spacing: 4) {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.caption2).foregroundStyle(.secondary).frame(width: 12)
+                Image(systemName: folderIcon).frame(width: 16)
+                Text(node.name).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, vpad)
+            .padding(.leading, indent)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if expanded { collapsed.insert(node.id) } else { collapsed.remove(node.id) }
             }
         }
     }
@@ -698,12 +702,21 @@ private struct BranchContextMenu: View {
 
     var body: some View {
         if !branch.isHead {
+            let current = viewModel.currentBranch?.name
             Button("Checkout") { Task { await viewModel.checkout(branch.name) } }
             Divider()
-            Button("Merge into “\(viewModel.currentBranch?.name ?? "current")”…") {
-                integrationSheet = .merge(branch.name)
+            // Merge this branch into the one you're on.
+            Button("Merge into “\(current ?? "current")”…") {
+                if let current { integrationSheet = .merge(source: branch.name, target: current) }
             }
-            Button("Rebase “\(viewModel.currentBranch?.name ?? "current")” onto This…") {
+            .disabled(current == nil)
+            // Reverse direction: merge the branch you're on into this one (checks it out first),
+            // so you can merge e.g. a feature into main without switching branches first.
+            Button("Merge “\(current ?? "current")” into “\(branch.name)”…") {
+                if let current { integrationSheet = .merge(source: current, target: branch.name) }
+            }
+            .disabled(current == nil)
+            Button("Rebase “\(current ?? "current")” onto This…") {
                 integrationSheet = .rebase(branch.name)
             }
             Divider()

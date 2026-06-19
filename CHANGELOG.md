@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/craigharman/gitify/compare/v1.5.0...v1.6.0) (2026-06-19)
+
+
+### Features
+
+* liquid glass interface added ([#8](https://github.com/craigharman/gitify/issues/8)) ([dc7ccff](https://github.com/craigharman/gitify/commit/dc7ccff1fab3a1dd56574e19249fa822f10fa1a4))
+
 ## [1.5.0](https://github.com/craigharman/gitify/compare/v1.4.2...v1.5.0) (2026-06-19)
 
 

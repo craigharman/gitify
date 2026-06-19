@@ -557,7 +557,10 @@ final class RepositoryViewModel {
         do {
             try await action(service)
         } catch {
-            loadError = "\(label) stopped — resolve conflicts in the working tree, then commit. (\(error))"
+            let hint = label.lowercased().contains("rebase")
+                ? "resolve conflicts and stage, then continue or skip"
+                : "resolve conflicts in the working tree, then commit"
+            loadError = "\(label) stopped \u{2014} \(hint). (\(error))"
         }
         await reloadEverything()
     }

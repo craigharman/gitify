@@ -764,7 +764,7 @@ private struct OperationBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text("\(operation.rawValue.capitalized) in progress \u{2014} resolve conflicts and commit, or abort.")
+            Text("\(operation.rawValue.capitalized) in progress \u{2014} \(operation == .rebase ? "resolve conflicts and stage, then continue or skip." : "resolve conflicts and commit, or abort.")")
             Spacer()
             if let onContinue {
                 Button("Continue", action: onContinue)

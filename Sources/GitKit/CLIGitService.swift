@@ -609,13 +609,13 @@ public struct CLIGitService: GitService {
         // `git rev-parse --git-path` may return a relative path; resolve it against
         // the repository root so that FileManager checks the correct location.
         for marker in ["rebase-merge", "rebase-apply"] {
-if let result = try? await runner.runRaw(["rev-parse", "--git-path", marker]),
-   result.succeeded {
-    let rawPath = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !rawPath.isEmpty else { continue }
-    let url = URL(fileURLWithPath: rawPath, relativeTo: root).standardizedFileURL
-    if FileManager.default.fileExists(atPath: url.path) { return .rebase }
-}
+            if let result = try? await runner.runRaw(["rev-parse", "--git-path", marker]),
+               result.succeeded {
+                let rawPath = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !rawPath.isEmpty else { continue }
+                let url = URL(fileURLWithPath: rawPath, relativeTo: root).standardizedFileURL
+                if FileManager.default.fileExists(atPath: url.path) { return .rebase }
+            }
         }
         return nil
     }

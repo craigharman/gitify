@@ -39,7 +39,7 @@ jobs:
         run: scripts/package.sh
 
       - name: Sign DMG with Sparkle EdDSA
-        if: env.SPARKLE_PRIVATE_KEY != ''
+        if: secrets.SPARKLE_PRIVATE_KEY != ''
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           VERSION: ${{ needs.release-please.outputs.version }}

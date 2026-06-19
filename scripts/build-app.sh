@@ -32,6 +32,9 @@ fi
 cp "${ROOT}/Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
 echo "==> Embedding Sparkle framework"
+<<<<<<< HEAD
+SPARKLE_FRAMEWORK="$(find "${ROOT}/.build/artifacts" -path '*/macos-arm64_x86_64/Sparkle.framework' -type d | head -1)"
+=======
 SPARKLE_FRAMEWORK=""
 for candidate in \
     "${ROOT}/.build/artifacts/sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" \
@@ -42,6 +45,7 @@ for candidate in \
   fi
 done
 
+>>>>>>> main
 if [[ -z "${SPARKLE_FRAMEWORK}" ]]; then
   echo "ERROR: Could not find Sparkle.framework in .build/artifacts" >&2
   exit 1

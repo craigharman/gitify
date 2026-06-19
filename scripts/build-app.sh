@@ -27,6 +27,7 @@ fi
 cp "${ROOT}/Resources/Info.plist" "${APP}/Contents/Info.plist"
 if [[ -n "${VERSION:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${APP}/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "${APP}/Contents/Info.plist"
 fi
 cp "${ROOT}/Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
@@ -53,8 +54,10 @@ rm -rf "${APP}/Contents/Frameworks/Sparkle.framework/Modules"
 
 echo "==> Ad-hoc signing"
 # Sign embedded frameworks inside-out before signing the outer app.
-find "${APP}/Contents/Frameworks" \( -name '*.framework' -o -name '*.dylib' \) -print0 | while IFS= read -r -d '' fw; do
-  codesign --force --sign - "${fw}"
+find "${APP}/Contents/Frameworks" -depth \
+  \( -name '*.framework' -o -name '*.dylib' -o -name '*.xpc' -o -name '*.app' \) \
+  -print0 | while IFS= read -r -d '' item; do
+  codesign --force --sign - "${item}"
 done
 codesign --force --deep --sign - "${APP}" >/dev/null 2>&1 || \
   echo "    (codesign skipped - app will still run locally)"

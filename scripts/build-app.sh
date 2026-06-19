@@ -53,8 +53,8 @@ rm -rf "${APP}/Contents/Frameworks/Sparkle.framework/Modules"
 
 echo "==> Ad-hoc signing"
 # Sign embedded frameworks inside-out before signing the outer app.
-find "${APP}/Contents/Frameworks" -name '*.framework' -o -name '*.dylib' | while read -r fw; do
-  codesign --force --sign - "${fw}" 2>/dev/null || true
+find "${APP}/Contents/Frameworks" \( -name '*.framework' -o -name '*.dylib' \) -print0 | while IFS= read -r -d '' fw; do
+  codesign --force --sign - "${fw}"
 done
 codesign --force --deep --sign - "${APP}" >/dev/null 2>&1 || \
   echo "    (codesign skipped - app will still run locally)"

@@ -542,6 +542,14 @@ final class RepositoryViewModel {
         }
     }
 
+    func continueRebase() async {
+        await runIntegration("Rebase Continue") { try await $0.continueRebase() }
+    }
+
+    func skipRebase() async {
+        await runIntegration("Rebase Skip") { try await $0.skipRebase() }
+    }
+
     /// Runs a merge/rebase/abort, then always reloads so an interrupted (conflicted) state
     /// is reflected even when the command exits non-zero.
     private func runIntegration(_ label: String, _ action: (CLIGitService) async throws -> Void) async {

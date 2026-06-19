@@ -188,6 +188,12 @@ public protocol GitService: Sendable {
     /// Aborts an in-progress rebase.
     func abortRebase() async throws
 
+    /// Continues an in-progress rebase after conflicts have been resolved.
+    func continueRebase() async throws
+
+    /// Skips the current patch and continues the rebase.
+    func skipRebase() async throws
+
     /// The interrupted operation currently in progress, if any.
     func currentOperation() async -> RepositoryOperation?
 

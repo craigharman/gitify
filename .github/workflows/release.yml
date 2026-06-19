@@ -53,7 +53,7 @@ jobs:
             exit 1
           fi
           chmod +x "${SIGN_UPDATE}"
-          SIG_OUTPUT=$(echo "${SPARKLE_PRIVATE_KEY}" | "${SIGN_UPDATE}" "${DMG}" --ed-key-file -)
+          SIG_OUTPUT=$(printf '%s' "${SPARKLE_PRIVATE_KEY}" | tr -d '[:space:]' | "${SIGN_UPDATE}" "${DMG}" --ed-key-file -)
           echo "${SIG_OUTPUT}"
           ED_SIG=$(echo "${SIG_OUTPUT}" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)
           LENGTH=$(wc -c < "${DMG}" | tr -d ' ')

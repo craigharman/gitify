@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/craigharman/gitify/compare/v1.4.2...v1.5.0) (2026-06-19)
+
+
+### Features
+
+* continue and skip rebase ([06a5099](https://github.com/craigharman/gitify/commit/06a5099a3e7b6a7e2f87d1ce515bc5ce5ba4ab2f))
+* continue and skip rebase ([#6](https://github.com/craigharman/gitify/issues/6)) ([06a5099](https://github.com/craigharman/gitify/commit/06a5099a3e7b6a7e2f87d1ce515bc5ce5ba4ab2f))
+
 ## [1.4.2](https://github.com/craigharman/gitify/compare/v1.4.1...v1.4.2) (2026-06-18)
 
 

@@ -32,5 +32,7 @@
 	<string>aV48qpd0jyXIfRFcy8V4Ypffq+ztJuHmPCE2HQp+QXY=</string>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/craigharman/gitify/main/appcast.xml</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

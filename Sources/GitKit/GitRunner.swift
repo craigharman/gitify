@@ -44,6 +44,9 @@ public actor GitRunner {
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["GIT_OPTIONAL_LOCKS"] = "0"
         env["LC_ALL"] = "C"
+        // Prevent git from trying to open an interactive editor (e.g. during rebase
+        // --continue). The GUI supplies messages via -m / -F where needed.
+        env["GIT_EDITOR"] = "true"
         // Restrict transports to well-known ones, blocking command-executing pseudo-protocols
         // like `ext::` / `fd::` that a malicious clone/remote URL could otherwise smuggle.
         env["GIT_ALLOW_PROTOCOL"] = "https:http:ssh:git:file"

@@ -292,6 +292,8 @@ enum Checks {
 
         // continueRebase: create conflict, resolve it, then continue.
         let contRepo = try await twoBranchRepo(conflicting: true)
+        // Prevent git rebase --continue from opening an interactive editor.
+        try await contRepo.git("config", "core.editor", "true")
         try await contRepo.git("checkout", "-q", "feature")
         let contService = try await contRepo.service()
         _ = try? await contService.rebase(onto: "main")

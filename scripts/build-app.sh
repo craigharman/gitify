@@ -35,6 +35,10 @@ cp "${ROOT}/Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 echo "==> Embedding Sparkle framework"
 SPARKLE_FRAMEWORK="$(find "${ROOT}/.build/artifacts" -path '*/macos-arm64_x86_64/Sparkle.framework' -type d 2>/dev/null | head -1)"
 if [[ -z "${SPARKLE_FRAMEWORK}" ]]; then
+  # Older SwiftPM artifact layouts may omit the arch segment.
+  SPARKLE_FRAMEWORK="$(find "${ROOT}/.build/artifacts" -path '*/Sparkle.framework' -type d 2>/dev/null | head -1)"
+fi
+if [[ -z "${SPARKLE_FRAMEWORK}" ]]; then
   echo "ERROR: Could not find Sparkle.framework in .build/artifacts" >&2
   exit 1
 fi

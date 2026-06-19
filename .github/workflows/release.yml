@@ -129,6 +129,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- appcast.xml; then
+            echo "appcast.xml unchanged; skipping commit"
+            exit 0
+          fi
           git stash push -m "appcast-update" -- appcast.xml
           git checkout -B main origin/main
           git stash pop

@@ -23,6 +23,7 @@ struct GitifyApp: App {
                 Button("Check for Updates\u{2026}") {
                     sparkleController.checkForUpdates()
                 }
+                .disabled(!sparkleController.canCheckForUpdates)
             }
             CommandGroup(after: .newItem) {
                 Button("Add Repository…") {

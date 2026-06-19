@@ -733,6 +733,15 @@ private struct ErrorBanner: View {
                 Button(action.label, action: action.handler)
                     .controlSize(.small)
             }
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(message, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.plain)
+            .controlSize(.small)
+            .help("Copy error message")
             Button { onDismiss() } label: {
                 Image(systemName: "xmark")
             }

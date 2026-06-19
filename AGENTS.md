@@ -4,7 +4,7 @@ Context for AI coding assistants working on Gitify.
 
 ## Project overview
 
-Gitify is a native macOS Git client (SwiftUI + AppKit, Swift 6, macOS 14+). It has zero external dependencies and builds with the Swift CLI toolchain -- no Xcode project exists.
+Gitify is a native macOS Git client (SwiftUI + AppKit, Swift 6, macOS 14+). Its only external dependency is [Sparkle](https://sparkle-project.org) for auto-updates. It builds with the Swift CLI toolchain -- no Xcode project exists.
 
 ## Architecture
 

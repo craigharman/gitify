@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/craigharman/gitify/compare/v1.6.0...v1.7.0) (2026-06-19)
+
+
+### Features
+
+* automatic software updates using sparkle ([#10](https://github.com/craigharman/gitify/issues/10)) ([2276fe0](https://github.com/craigharman/gitify/commit/2276fe007d87d82f7f23ad7b20c5156929081ea2))
+
 ## [1.6.0](https://github.com/craigharman/gitify/compare/v1.5.0...v1.6.0) (2026-06-19)
 
 

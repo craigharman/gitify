@@ -28,5 +28,9 @@
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>SUPublicEDKey</key>
+	<string>aV48qpd0jyXIfRFcy8V4Ypffq+ztJuHmPCE2HQp+QXY=</string>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/craigharman/gitify/main/appcast.xml</string>
 </dict>
 </plist>

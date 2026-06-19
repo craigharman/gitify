@@ -38,9 +38,73 @@ jobs:
           VERSION: ${{ needs.release-please.outputs.version }}
         run: scripts/package.sh
 
+      - name: Sign DMG with Sparkle EdDSA
+        if: env.SPARKLE_PRIVATE_KEY != ''
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          DMG="build/Gitify-${VERSION}.dmg"
+          SIGN_UPDATE="$(find .build/artifacts -name sign_update -type f | head -1)"
+          if [[ -z "${SIGN_UPDATE}" ]]; then
+            echo "::error::sign_update not found in .build/artifacts"
+            exit 1
+          fi
+          chmod +x "${SIGN_UPDATE}"
+          SIG_OUTPUT=$(echo "${SPARKLE_PRIVATE_KEY}" | "${SIGN_UPDATE}" "${DMG}" --ed-key-file -)
+          echo "${SIG_OUTPUT}"
+          ED_SIG=$(echo "${SIG_OUTPUT}" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)
+          LENGTH=$(wc -c < "${DMG}" | tr -d ' ')
+          echo "ED_SIGNATURE=${ED_SIG}" >> "$GITHUB_ENV"
+          echo "DMG_LENGTH=${LENGTH}" >> "$GITHUB_ENV"
+
+      - name: Update appcast.xml
+        if: env.ED_SIGNATURE != ''
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          DMG_URL="https://github.com/craigharman/gitify/releases/download/${TAG_NAME}/Gitify-${VERSION}.dmg"
+          PUB_DATE=$(date -R)
+          # Fetch the current appcast.xml from main
+          git fetch origin main
+          git checkout origin/main -- appcast.xml
+          # Build the new item block and insert before </channel>
+          python3 -c "
+          import sys
+          item = '''    <item>
+              <title>Version ${VERSION}</title>
+              <pubDate>${PUB_DATE}</pubDate>
+              <sparkle:version>${VERSION}</sparkle:version>
+              <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+              <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+              <enclosure
+                url=\"${DMG_URL}\"
+                type=\"application/octet-stream\"
+                sparkle:edSignature=\"${ED_SIGNATURE}\"
+                length=\"${DMG_LENGTH}\"
+              />
+            </item>'''
+          content = open('appcast.xml').read()
+          updated = content.replace('</channel>', item + '\n  </channel>')
+          open('appcast.xml', 'w').write(updated)
+          "
+
       - name: Upload DMG to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ needs.release-please.outputs.tag_name }}" \
             "build/Gitify-${{ needs.release-please.outputs.version }}.dmg"
+
+      - name: Commit updated appcast.xml
+        if: env.ED_SIGNATURE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git add appcast.xml
+          git commit -m "chore: update appcast.xml for v${{ needs.release-please.outputs.version }}"
+          git push origin main

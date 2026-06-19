@@ -75,7 +75,7 @@ jobs:
           git checkout origin/main -- appcast.xml
           # Build the new item block and insert before </channel>
           python3 -c "
-          import sys
+          version = \"${VERSION}\"
           item = '''    <item>
               <title>Version ${VERSION}</title>
               <pubDate>${PUB_DATE}</pubDate>
@@ -90,8 +90,11 @@ jobs:
               />
             </item>'''
           content = open('appcast.xml').read()
-          updated = content.replace('</channel>', item + '\n  </channel>')
-          open('appcast.xml', 'w').write(updated)
+          if f'<sparkle:version>{version}</sparkle:version>' in content:
+            print(f'appcast.xml already contains version {version}; skipping insert')
+          else:
+            updated = content.replace('</channel>', item + '\n  </channel>')
+            open('appcast.xml', 'w').write(updated)
           "
 
       - name: Upload DMG to release

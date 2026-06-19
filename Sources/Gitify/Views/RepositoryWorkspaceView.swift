@@ -592,8 +592,13 @@ private struct BranchTreeNode: View {
                 HStack {
                     Text(node.name)
                     Spacer()
-                    if !isRemote, let ahead = ref.ahead, let behind = ref.behind, ahead + behind > 0 {
-                        Text("↑\(ahead) ↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                    if !isRemote {
+                        if let behind = ref.behind, behind > 0 {
+                            Text("↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        if let ahead = ref.ahead, ahead > 0 {
+                            Text("↑\(ahead)").font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                     if ref.isHead { Image(systemName: "checkmark").foregroundStyle(.secondary) }
                 }

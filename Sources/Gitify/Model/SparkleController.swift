@@ -19,6 +19,9 @@ final class SparkleController {
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+        
+        // Quiet check on launch; surfaces a prompt only if a newer version exists.
+        updaterController.updater.checkForUpdatesInBackground()
     }
 
     /// Manually trigger an update check (from the menu bar).

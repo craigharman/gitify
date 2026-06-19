@@ -41,11 +41,14 @@ jobs:
         run: scripts/package.sh
 
       - name: Sign DMG with Sparkle EdDSA
-        if: secrets.SPARKLE_PRIVATE_KEY != ''
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
           VERSION: ${{ needs.release-please.outputs.version }}
         run: |
+          if [[ -z "${SPARKLE_PRIVATE_KEY}" ]]; then
+            echo "::error::SPARKLE_PRIVATE_KEY is not set; cannot sign DMG for Sparkle updates"
+            exit 1
+          fi
           DMG="build/Gitify-${VERSION}.dmg"
           SIGN_UPDATE="$(find .build/artifacts -name sign_update -type f | head -1)"
           if [[ -z "${SIGN_UPDATE}" ]]; then
@@ -59,7 +62,6 @@ jobs:
           LENGTH=$(wc -c < "${DMG}" | tr -d ' ')
           echo "ED_SIGNATURE=${ED_SIG}" >> "$GITHUB_ENV"
           echo "DMG_LENGTH=${LENGTH}" >> "$GITHUB_ENV"
-
       - name: Update appcast.xml
         if: env.ED_SIGNATURE != ''
         env:

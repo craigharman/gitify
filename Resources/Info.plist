@@ -9,7 +9,7 @@
 	<key>CFBundleIdentifier</key>
 	<string>com.gitify.app</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>1.1.0</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.1.0</string>
 	<key>CFBundlePackageType</key>
@@ -28,5 +28,11 @@
 	<true/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>SUPublicEDKey</key>
+	<string>aV48qpd0jyXIfRFcy8V4Ypffq+ztJuHmPCE2HQp+QXY=</string>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/craigharman/gitify/main/appcast.xml</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>

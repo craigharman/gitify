@@ -26,27 +26,36 @@ The script then signs with the hardened runtime, notarizes via `notarytool`, and
 ticket. Spawning the user's `git` binary works under the hardened runtime with no extra
 entitlement (git is Apple- or Developer-signed).
 
-## 2. Auto-update
+## 2. Auto-update (Sparkle)
 
-The app currently ships a lightweight in-app check (`UpdateChecker`) against the project's
-GitHub releases: **Gitify ▸ Check for Updates…**, plus a quiet check on launch. Point
-`UpdateChecker.repository` at the real `owner/repo`, and publish each release with a semver tag
-(e.g. `v0.2.0`) and the DMG attached.
+The app uses [Sparkle](https://sparkle-project.org) for automatic updates. Sparkle checks the
+appcast feed on launch and offers to download and install newer versions in-place.
 
-### Upgrading to Sparkle (recommended for production)
+### How it works
 
-For silent, signed, delta auto-updates, integrate [Sparkle](https://sparkle-project.org):
+- `SUFeedURL` in `Info.plist` points to `appcast.xml` on the `main` branch (served via raw
+  GitHub URL).
+- Each release is signed with an EdDSA key pair. The public key is in `Info.plist`
+  (`SUPublicEDKey`); the private key is stored as a GitHub Actions secret (`SPARKLE_PRIVATE_KEY`).
+- The CI workflow (`release.yml`) signs each DMG with `sign_update`, appends an `<item>` to
+  `appcast.xml`, and commits it back to `main`.
 
-1. Add the SPM dependency `https://github.com/sparkle-project/Sparkle` to `Package.swift` and
-   link `Sparkle` into the `Gitify` target.
-2. Generate an EdDSA key pair with Sparkle's `generate_keys`; keep the private key in the
-   keychain, add the public key to `Resources/Info.plist` as `SUPublicEDKey`.
-3. Add `SUFeedURL` (your hosted `appcast.xml`) and `SUEnableInstallerLauncherService` to
-   `Info.plist`.
-4. Embed `Sparkle.framework` (and its XPC services) into `Gitify.app/Contents/Frameworks` in
-   `scripts/build-app.sh`, and code-sign each nested component before notarizing.
-5. Replace `UpdateChecker` calls with `SPUStandardUpdaterController`.
-6. Sign each release with `sign_update <dmg>` and publish the `appcast.xml`.
+### EdDSA key management
 
-This step needs a Developer ID and a place to host the appcast, so it's done on a release
-machine rather than in the headless build here.
+The key pair is independent of Apple code signing. To regenerate:
+
+```sh
+swift package resolve
+.build/artifacts/sparkle/Sparkle/bin/generate_keys              # creates key pair, prints public key
+.build/artifacts/sparkle/Sparkle/bin/generate_keys -x sparkle_private_key   # exports private key to file
+cat sparkle_private_key                                         # copy this value for CI
+rm sparkle_private_key                                          # don't leave the key on disk
+```
+
+- Store the **public key** (printed by `generate_keys`) in `Resources/Info.plist` as `SUPublicEDKey`.
+- Store the **private key** (contents of the exported file) as the GitHub Actions secret `SPARKLE_PRIVATE_KEY`.
+
+### Adding Apple code signing later
+
+When a Developer ID is available, set `SIGN_IDENTITY` and `NOTARY_PROFILE` in CI to produce
+signed and notarized DMGs. Sparkle works with both ad-hoc and Developer ID signed apps.

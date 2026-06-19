@@ -27,10 +27,38 @@ fi
 cp "${ROOT}/Resources/Info.plist" "${APP}/Contents/Info.plist"
 if [[ -n "${VERSION:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${APP}/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "${APP}/Contents/Info.plist"
 fi
 cp "${ROOT}/Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
+echo "==> Embedding Sparkle framework"
+SPARKLE_FRAMEWORK=""
+for candidate in \
+    "${ROOT}/.build/artifacts/sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" \
+    "${ROOT}/.build/artifacts/sparkle/Sparkle/Sparkle.framework"; do
+  if [[ -d "${candidate}" ]]; then
+    SPARKLE_FRAMEWORK="${candidate}"
+    break
+  fi
+done
+
+if [[ -z "${SPARKLE_FRAMEWORK}" ]]; then
+  echo "ERROR: Could not find Sparkle.framework in .build/artifacts" >&2
+  exit 1
+fi
+
+mkdir -p "${APP}/Contents/Frameworks"
+cp -R "${SPARKLE_FRAMEWORK}" "${APP}/Contents/Frameworks/"
+rm -rf "${APP}/Contents/Frameworks/Sparkle.framework/Headers"
+rm -rf "${APP}/Contents/Frameworks/Sparkle.framework/Modules"
+
 echo "==> Ad-hoc signing"
+# Sign embedded frameworks inside-out before signing the outer app.
+find "${APP}/Contents/Frameworks" -depth \
+  \( -name '*.framework' -o -name '*.dylib' -o -name '*.xpc' -o -name '*.app' \) \
+  -print0 | while IFS= read -r -d '' item; do
+  codesign --force --sign - "${item}"
+done
 codesign --force --deep --sign - "${APP}" >/dev/null 2>&1 || \
   echo "    (codesign skipped - app will still run locally)"
 

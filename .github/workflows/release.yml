@@ -3,6 +3,8 @@ name: Release
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'appcast.xml'
 
 permissions:
   contents: write
@@ -38,9 +40,102 @@ jobs:
           VERSION: ${{ needs.release-please.outputs.version }}
         run: scripts/package.sh
 
+      - name: Sign DMG with Sparkle EdDSA
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          if [[ -z "${SPARKLE_PRIVATE_KEY}" ]]; then
+            echo "::error::SPARKLE_PRIVATE_KEY is not set; cannot sign DMG for Sparkle updates"
+            exit 1
+          fi
+          DMG="build/Gitify-${VERSION}.dmg"
+          if [[ ! -f "${DMG}" ]]; then
+            echo "::error::DMG not found at ${DMG}"
+            exit 1
+          fi
+          SIGN_UPDATE="$(find .build/artifacts -name sign_update -type f | head -1)"
+          if [[ -z "${SIGN_UPDATE}" ]]; then
+            echo "::error::sign_update not found in .build/artifacts"
+            exit 1
+          fi
+          chmod +x "${SIGN_UPDATE}"
+          KEY_FILE=$(mktemp)
+          trap 'rm -f "${KEY_FILE}"' EXIT
+          printf '%s' "${SPARKLE_PRIVATE_KEY}" | tr -d '[:space:]' > "${KEY_FILE}"
+          SIG_OUTPUT=$("${SIGN_UPDATE}" "${DMG}" --ed-key-file "${KEY_FILE}")
+          echo "${SIG_OUTPUT}"
+          ED_SIG=$(echo "${SIG_OUTPUT}" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)
+          if [[ -z "${ED_SIG}" ]]; then
+            echo "::error::Failed to extract EdDSA signature from sign_update output"
+            exit 1
+          fi
+          LENGTH=$(wc -c < "${DMG}" | tr -d ' ')
+          echo "ED_SIGNATURE=${ED_SIG}" >> "$GITHUB_ENV"
+          echo "DMG_LENGTH=${LENGTH}" >> "$GITHUB_ENV"
+      - name: Update appcast.xml
+        if: env.ED_SIGNATURE != ''
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          DMG_URL="https://github.com/craigharman/gitify/releases/download/${TAG_NAME}/Gitify-${VERSION}.dmg"
+          PUB_DATE=$(date -R)
+          # Fetch the current appcast.xml from main
+          git fetch origin main
+          git checkout origin/main -- appcast.xml
+          # Build the new item block and insert before </channel>
+          export DMG_URL PUB_DATE
+          python3 - <<'PY'
+          import os
+
+          version = os.environ["VERSION"]
+          item = f'''    <item>
+              <title>Version {version}</title>
+              <pubDate>{os.environ["PUB_DATE"]}</pubDate>
+              <sparkle:version>{version}</sparkle:version>
+              <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
+              <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+              <enclosure
+                url="{os.environ['DMG_URL']}"
+                type="application/octet-stream"
+                sparkle:edSignature="{os.environ['ED_SIGNATURE']}"
+                length="{os.environ['DMG_LENGTH']}"
+              />
+            </item>'''
+
+          with open("appcast.xml", "r", encoding="utf-8") as f:
+              content = f.read()
+
+          if f"<sparkle:version>{version}</sparkle:version>" in content:
+              print(f"appcast.xml already contains version {version}; skipping insert")
+          else:
+              updated = content.replace("</channel>", item + "\n  </channel>")
+              with open("appcast.xml", "w", encoding="utf-8") as f:
+                  f.write(updated)
+          PY
+
       - name: Upload DMG to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ needs.release-please.outputs.tag_name }}" \
             "build/Gitify-${{ needs.release-please.outputs.version }}.dmg"
+
+      - name: Commit updated appcast.xml
+        if: env.ED_SIGNATURE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- appcast.xml; then
+            echo "appcast.xml unchanged; skipping commit"
+            exit 0
+          fi
+          git stash push -m "appcast-update" -- appcast.xml
+          git checkout -B main origin/main
+          git stash pop
+          git add appcast.xml
+          git commit -m "chore: update appcast.xml for v${{ needs.release-please.outputs.version }}"
+          git push origin main

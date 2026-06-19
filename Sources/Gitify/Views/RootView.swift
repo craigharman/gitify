@@ -22,10 +22,6 @@ struct RootView: View {
                 }
             }
         }
-        .task {
-            // Quiet check on launch; surfaces a prompt only if a newer version exists.
-            await UpdateChecker.checkForUpdates(userInitiated: false)
-        }
         .overlay {
             if model.isCloning {
                 ZStack {

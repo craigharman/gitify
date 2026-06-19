@@ -5,6 +5,7 @@ import SwiftUI
 struct GitifyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
+    @State private var sparkleController = SparkleController()
 
     var body: some Scene {
         WindowGroup {
@@ -19,9 +20,10 @@ struct GitifyApp: App {
         }
         .commands {
             CommandGroup(after: .appInfo) {
-                Button("Check for Updates…") {
-                    Task { await UpdateChecker.checkForUpdates(userInitiated: true) }
+                Button("Check for Updates\u{2026}") {
+                    sparkleController.checkForUpdates()
                 }
+                .disabled(!sparkleController.canCheckForUpdates)
             }
             CommandGroup(after: .newItem) {
                 Button("Add Repository…") {

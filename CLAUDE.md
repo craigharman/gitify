@@ -8,7 +8,7 @@ A native macOS Git client built with SwiftUI + AppKit. It wraps the user's insta
 
 ## Architecture
 
-Two SwiftPM targets, zero external dependencies:
+Two SwiftPM targets, one external dependency ([Sparkle](https://sparkle-project.org) for auto-updates):
 
 - **GitKit** (`Sources/GitKit/`) -- headless Git engine. `CLIGitService` implements the `GitService` protocol by shelling out to `git`. `GitRunner` is an **actor** that serialises all process invocations per-repo to prevent `index.lock` contention.
 - **Gitify** (`Sources/Gitify/`) -- SwiftUI app. MVVM with `@Observable` / `@MainActor`. `AppModel` owns the repo list; `RepositoryViewModel` holds per-repo live state.

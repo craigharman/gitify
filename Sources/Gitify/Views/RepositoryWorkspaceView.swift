@@ -490,16 +490,26 @@ private struct WorkspaceRail: View {
                         Text(branch.name).fontWeight(.medium)
                         Spacer()
                         if let behind = branch.behind, behind > 0 {
-                            Label("\(behind)", systemImage: "arrow.down")
-                                .font(.caption2.monospacedDigit())
-                                .padding(.horizontal, 6).padding(.vertical, 1)
-                                .background(Capsule().fill(.quaternary))
+                            Button { Task { await viewModel.pull() } } label: {
+                                Label("\(behind)", systemImage: "arrow.down")
+                                    .font(.caption2.monospacedDigit())
+                                    .padding(.horizontal, 6).padding(.vertical, 1)
+                                    .background(Capsule().fill(.quaternary))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Pull \(behind) commit\(behind == 1 ? "" : "s")")
+                            .disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
                         }
                         if let ahead = branch.ahead, ahead > 0 {
-                            Label("\(ahead)", systemImage: "arrow.up")
-                                .font(.caption2.monospacedDigit())
-                                .padding(.horizontal, 6).padding(.vertical, 1)
-                                .background(Capsule().fill(.quaternary))
+                            Button { Task { await viewModel.push() } } label: {
+                                Label("\(ahead)", systemImage: "arrow.up")
+                                    .font(.caption2.monospacedDigit())
+                                    .padding(.horizontal, 6).padding(.vertical, 1)
+                                    .background(Capsule().fill(.quaternary))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Push \(ahead) commit\(ahead == 1 ? "" : "s")")
+                            .disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
                         }
                     }
                     .font(.caption)
@@ -594,10 +604,40 @@ private struct BranchTreeNode: View {
                     Spacer()
                     if !isRemote {
                         if let behind = ref.behind, behind > 0 {
-                            Text("↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                            Button {
+                                Task {
+                                    if ref.isHead {
+                                        await viewModel.pull()
+                                    } else {
+                                        await viewModel.fetch()
+                                    }
+                                }
+                            } label: {
+                                Text("↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help(ref.isHead
+                                  ? "Pull \(behind) commit\(behind == 1 ? "" : "s")"
+                                  : "Fetch from remote")
+                            .disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
                         }
                         if let ahead = ref.ahead, ahead > 0 {
-                            Text("↑\(ahead)").font(.caption2).foregroundStyle(.secondary)
+                            Button {
+                                Task {
+                                    if ref.isHead {
+                                        await viewModel.push()
+                                    } else {
+                                        await viewModel.pushBranch(ref.name)
+                                    }
+                                }
+                            } label: {
+                                Text("↑\(ahead)").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help(ref.isHead
+                                  ? "Push \(ahead) commit\(ahead == 1 ? "" : "s")"
+                                  : "Push \(ref.name)")
+                            .disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
                         }
                     }
                     if ref.isHead { Image(systemName: "checkmark").foregroundStyle(.secondary) }

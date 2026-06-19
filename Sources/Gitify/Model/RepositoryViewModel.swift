@@ -412,6 +412,15 @@ final class RepositoryViewModel {
                                    force: force, onProgress: progress)
         }
     }
+    /// Pushes a specific branch (by name) to its upstream remote.
+    func pushBranch(_ name: String) async {
+        let ref = refs.first { $0.kind == .localBranch && $0.name == name }
+        let setUpstream = ref?.upstream == nil
+        await runOperation("Pushing \(name)") { service, progress in
+            try await service.push(remote: nil, branch: name, setUpstream: setUpstream,
+                                   force: false, onProgress: progress)
+        }
+    }
     func pushTags() async {
         await runOperation("Pushing Tags") { service, progress in
             try await service.pushTags(remote: nil, onProgress: progress)

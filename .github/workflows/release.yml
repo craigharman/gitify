@@ -85,28 +85,35 @@ jobs:
           git fetch origin main
           git checkout origin/main -- appcast.xml
           # Build the new item block and insert before </channel>
-          python3 -c "
-          version = \"${VERSION}\"
-          item = '''    <item>
-              <title>Version ${VERSION}</title>
-              <pubDate>${PUB_DATE}</pubDate>
-              <sparkle:version>${VERSION}</sparkle:version>
-              <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+          export DMG_URL PUB_DATE
+          python3 - <<'PY'
+          import os
+
+          version = os.environ["VERSION"]
+          item = f'''    <item>
+              <title>Version {version}</title>
+              <pubDate>{os.environ["PUB_DATE"]}</pubDate>
+              <sparkle:version>{version}</sparkle:version>
+              <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
               <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
               <enclosure
-                url=\"${DMG_URL}\"
-                type=\"application/octet-stream\"
-                sparkle:edSignature=\"${ED_SIGNATURE}\"
-                length=\"${DMG_LENGTH}\"
+                url="{os.environ['DMG_URL']}"
+                type="application/octet-stream"
+                sparkle:edSignature="{os.environ['ED_SIGNATURE']}"
+                length="{os.environ['DMG_LENGTH']}"
               />
             </item>'''
-          content = open('appcast.xml').read()
-          if f'<sparkle:version>{version}</sparkle:version>' in content:
-            print(f'appcast.xml already contains version {version}; skipping insert')
+
+          with open("appcast.xml", "r", encoding="utf-8") as f:
+              content = f.read()
+
+          if f"<sparkle:version>{version}</sparkle:version>" in content:
+              print(f"appcast.xml already contains version {version}; skipping insert")
           else:
-            updated = content.replace('</channel>', item + '\n  </channel>')
-            open('appcast.xml', 'w').write(updated)
-          "
+              updated = content.replace("</channel>", item + "\n  </channel>")
+              with open("appcast.xml", "w", encoding="utf-8") as f:
+                  f.write(updated)
+          PY
 
       - name: Upload DMG to release
         env:

@@ -44,9 +44,12 @@ struct RepositoryWorkspaceView: View {
         } detail: {
             VStack(spacing: 0) {
                 if let operation = viewModel.operation {
-                    OperationBanner(operation: operation) {
-                        Task { await viewModel.abortOperation() }
-                    }
+                    OperationBanner(
+                        operation: operation,
+                        onContinue: operation == .rebase ? { Task { await viewModel.continueRebase() } } : nil,
+                        onSkip: operation == .rebase ? { Task { await viewModel.skipRebase() } } : nil,
+                        onAbort: { Task { await viewModel.abortOperation() } }
+                    )
                 }
                 if let error = viewModel.loadError {
                     ErrorBanner(
@@ -589,8 +592,13 @@ private struct BranchTreeNode: View {
                 HStack {
                     Text(node.name)
                     Spacer()
-                    if !isRemote, let ahead = ref.ahead, let behind = ref.behind, ahead + behind > 0 {
-                        Text("↑\(ahead) ↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                    if !isRemote {
+                        if let behind = ref.behind, behind > 0 {
+                            Text("↓\(behind)").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        if let ahead = ref.ahead, ahead > 0 {
+                            Text("↑\(ahead)").font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                     if ref.isHead { Image(systemName: "checkmark").foregroundStyle(.secondary) }
                 }
@@ -749,14 +757,24 @@ private extension String {
 /// Shown while a conflicted merge/rebase is in progress, offering to abort.
 private struct OperationBanner: View {
     let operation: RepositoryOperation
+    var onContinue: (() -> Void)?
+    var onSkip: (() -> Void)?
     let onAbort: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            Text("\(operation.rawValue.capitalized) in progress — resolve conflicts and commit, or abort.")
+            Text("\(operation.rawValue.capitalized) in progress \u{2014} \(operation == .rebase ? "resolve conflicts and stage, then continue or skip." : "resolve conflicts and commit, or abort.")")
             Spacer()
-            Button("Abort \(operation.rawValue.capitalized)", role: .destructive, action: onAbort)
+            if let onContinue {
+                Button("Continue", action: onContinue)
+                    .controlSize(.small)
+            }
+            if let onSkip {
+                Button("Skip", action: onSkip)
+                    .controlSize(.small)
+            }
+            Button("Abort", role: .destructive, action: onAbort)
                 .controlSize(.small)
         }
         .font(.callout)

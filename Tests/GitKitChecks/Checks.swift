@@ -276,7 +276,44 @@ enum Checks {
         let rService = try await rebaseRepo.service()
         try await rService.rebase(onto: "main")
         let topicLog = try await rService.log(limit: 10, revisions: ["HEAD"])
-        await expect(topicLog.commits.contains { $0.summary == "main work" }, "topic now contains main's commit")
+        await expect(topicLog.commits.contains { $0.summary == "main work" }, "topic now contains main\u{2019}s commit")
+
+        // Conflicting rebase: currentOperation detects it, abort recovers.
+        let conflictRebase = try await twoBranchRepo(conflicting: true)
+        try await conflictRebase.git("checkout", "-q", "feature")
+        let crService = try await conflictRebase.service()
+        await expectThrows("conflicting rebase throws") {
+            try await crService.rebase(onto: "main")
+        }
+        await expect(await crService.currentOperation() == .rebase, "rebase in progress detected")
+        try await crService.abortRebase()
+        await expect(await crService.currentOperation() == nil, "rebase aborted")
+        await expect(try await crService.status().hasChanges == false, "working tree clean after rebase abort")
+
+        // continueRebase: create conflict, resolve it, then continue.
+        let contRepo = try await twoBranchRepo(conflicting: true)
+        try await contRepo.git("checkout", "-q", "feature")
+        let contService = try await contRepo.service()
+        _ = try? await contService.rebase(onto: "main")
+        await expect(await contService.currentOperation() == .rebase, "rebase paused on conflict")
+        // Resolve the conflict and stage the file.
+        try await contService.resolveFile(path: "f.txt", contents: "a\nRESOLVED\nc\n")
+        try await contService.continueRebase()
+        await expect(await contService.currentOperation() == nil, "rebase completed after continue")
+        let contLog = try await contService.log(limit: 10, revisions: ["HEAD"])
+        await expect(contLog.commits.contains { $0.summary == "main edit" }, "rebased branch includes main\u{2019}s commit")
+
+        // skipRebase: create conflict, skip the conflicting commit.
+        let skipRepo = try await twoBranchRepo(conflicting: true)
+        try await skipRepo.git("checkout", "-q", "feature")
+        let skipService = try await skipRepo.service()
+        _ = try? await skipService.rebase(onto: "main")
+        await expect(await skipService.currentOperation() == .rebase, "rebase paused for skip test")
+        try await skipService.skipRebase()
+        await expect(await skipService.currentOperation() == nil, "rebase completed after skip")
+        let skipLog = try await skipService.log(limit: 10, revisions: ["HEAD"])
+        await expect(skipLog.commits.contains { $0.summary == "main edit" }, "skipped rebase still has main\u{2019}s commit")
+        await expect(!skipLog.commits.contains { $0.summary == "feature edit" }, "skipped commit dropped")
     }
 
     static func hunkStaging() async throws {

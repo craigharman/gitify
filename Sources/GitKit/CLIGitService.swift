@@ -592,19 +592,30 @@ public struct CLIGitService: GitService {
         try await runner.run(["rebase", "--abort"])
     }
 
+    public func continueRebase() async throws {
+        try await runner.run(["rebase", "--continue"])
+    }
+
+    public func skipRebase() async throws {
+        try await runner.run(["rebase", "--skip"])
+    }
+
     public func currentOperation() async -> RepositoryOperation? {
         if let head = try? await runner.runRaw(["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]),
            head.succeeded {
             return .merge
         }
         // A rebase leaves a rebase-merge / rebase-apply directory under the git dir.
-        if let gitDir = try? await runner.runRaw(["rev-parse", "--git-path", "rebase-merge"]) {
-            let path = gitDir.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
-            if FileManager.default.fileExists(atPath: path) { return .rebase }
-        }
-        if let gitDir = try? await runner.runRaw(["rev-parse", "--git-path", "rebase-apply"]) {
-            let path = gitDir.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
-            if FileManager.default.fileExists(atPath: path) { return .rebase }
+        // `git rev-parse --git-path` may return a relative path; resolve it against
+        // the repository root so that FileManager checks the correct location.
+        for marker in ["rebase-merge", "rebase-apply"] {
+if let result = try? await runner.runRaw(["rev-parse", "--git-path", marker]),
+   result.succeeded {
+    let rawPath = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !rawPath.isEmpty else { continue }
+    let url = URL(fileURLWithPath: rawPath, relativeTo: root).standardizedFileURL
+    if FileManager.default.fileExists(atPath: url.path) { return .rebase }
+}
         }
         return nil
     }

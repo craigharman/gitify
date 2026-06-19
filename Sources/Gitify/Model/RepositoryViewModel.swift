@@ -416,8 +416,16 @@ final class RepositoryViewModel {
     func pushBranch(_ name: String) async {
         let ref = refs.first { $0.kind == .localBranch && $0.name == name }
         let setUpstream = ref?.upstream == nil
+        // Extract the remote name from the upstream (e.g. "origin/main" → "origin"),
+        // falling back to "origin" when no upstream is configured.
+        let remote: String
+        if let upstream = ref?.upstream, let slash = upstream.firstIndex(of: "/") {
+            remote = String(upstream[..<slash])
+        } else {
+            remote = "origin"
+        }
         await runOperation("Pushing \(name)") { service, progress in
-            try await service.push(remote: nil, branch: name, setUpstream: setUpstream,
+            try await service.push(remote: remote, branch: name, setUpstream: setUpstream,
                                    force: false, onProgress: progress)
         }
     }

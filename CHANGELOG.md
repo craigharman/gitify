@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/craigharman/gitify/compare/v1.8.0...v1.8.1) (2026-06-20)
+
+
+### Bug Fixes
+
+* download sparkle release as part of CI ([#16](https://github.com/craigharman/gitify/issues/16)) ([251c71a](https://github.com/craigharman/gitify/commit/251c71a3c5ab4b8fc3e3134e505d82f197affe97))
+
 ## [1.8.0](https://github.com/craigharman/gitify/compare/v1.7.0...v1.8.0) (2026-06-20)
 
 

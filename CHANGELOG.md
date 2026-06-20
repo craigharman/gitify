@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2](https://github.com/craigharman/gitify/compare/v1.8.1...v1.8.2) (2026-06-20)
+
+
+### Bug Fixes
+
+* access to sparkle key file ([#18](https://github.com/craigharman/gitify/issues/18)) ([723f659](https://github.com/craigharman/gitify/commit/723f6591ea18b14d3e24b7da08efed150c0b0f77))
+
 ## [1.8.1](https://github.com/craigharman/gitify/compare/v1.8.0...v1.8.1) (2026-06-20)
 
 

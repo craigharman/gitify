@@ -5,5 +5,18 @@
     <link>https://raw.githubusercontent.com/craigharman/gitify/main/appcast.xml</link>
     <description>Gitify update feed</description>
     <language>en</language>
+      <item>
+    <title>Version 1.8.3</title>
+    <pubDate>Sat, 20 Jun 2026 04:52:47 +0000</pubDate>
+    <sparkle:version>1.8.3</sparkle:version>
+    <sparkle:shortVersionString>1.8.3</sparkle:shortVersionString>
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+    <enclosure
+      url="https://github.com/craigharman/gitify/releases/download/v1.8.3/Gitify-1.8.3.dmg"
+      type="application/octet-stream"
+      sparkle:edSignature="E1fMm/Ajb2D+ND9IIWclSxTwT7rU77Zu5sPhycVOaoMoEhs40KladyygMmWJ77wHhKaXhOjuV7qkyS1eq3IiAQ=="
+      length="6723441"
+    />
+  </item>
   </channel>
 </rss>

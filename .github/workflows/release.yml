@@ -69,7 +69,17 @@ jobs:
             echo "::error::DMG not found at ${DMG}"
             exit 1
           fi
-          SIG_OUTPUT=$(printf '%s' "${SPARKLE_PRIVATE_KEY}" | tr -d '[:space:]' | "${SIGN_UPDATE}" --ed-key-file - "${DMG}")
+          echo "sign_update path: ${SIGN_UPDATE}"
+          ls -la "${SIGN_UPDATE}"
+          file "${SIGN_UPDATE}"
+          echo "DMG path: ${DMG}"
+          ls -la "${DMG}"
+          echo "Key length: $(printf '%s' "${SPARKLE_PRIVATE_KEY}" | tr -d '[:space:]' | wc -c | tr -d ' ') bytes"
+          SIG_OUTPUT=$(printf '%s' "${SPARKLE_PRIVATE_KEY}" | tr -d '[:space:]' | "${SIGN_UPDATE}" --ed-key-file - "${DMG}" 2>&1) || {
+            echo "::error::sign_update failed with exit code $?"
+            echo "Output: ${SIG_OUTPUT}"
+            exit 1
+          }
           echo "${SIG_OUTPUT}"
           ED_SIG=$(echo "${SIG_OUTPUT}" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)
           if [[ -z "${ED_SIG}" ]]; then

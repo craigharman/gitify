@@ -1,0 +1,31 @@
+name: Auto-merge release-please PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    # Only run on release-please PRs
+    if: github.actor == 'github-actions[bot]' && startsWith(github.head_ref, 'release-please--')
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: swift build
+
+      - name: Run tests
+        run: swift run GitKitChecks
+
+      - name: Approve and auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr review "${{ github.event.pull_request.number }}" --approve
+          gh pr merge "${{ github.event.pull_request.number }}" --squash --auto

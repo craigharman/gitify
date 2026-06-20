@@ -18,6 +18,7 @@ echo "==> Assembling ${APP}"
 rm -rf "${APP}"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
 cp "${BIN}" "${APP}/Contents/MacOS/Gitify"
+install_name_tool -add_rpath @executable_path/../Frameworks "${APP}/Contents/MacOS/Gitify"
 
 # Copy the SwiftPM-generated resource bundle so Bundle.module works at runtime.
 BUNDLE_DIR="$(dirname "${BIN}")"
@@ -32,20 +33,11 @@ fi
 cp "${ROOT}/Resources/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
 echo "==> Embedding Sparkle framework"
-<<<<<<< HEAD
-SPARKLE_FRAMEWORK="$(find "${ROOT}/.build/artifacts" -path '*/macos-arm64_x86_64/Sparkle.framework' -type d | head -1)"
-=======
-SPARKLE_FRAMEWORK=""
-for candidate in \
-    "${ROOT}/.build/artifacts/sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" \
-    "${ROOT}/.build/artifacts/sparkle/Sparkle/Sparkle.framework"; do
-  if [[ -d "${candidate}" ]]; then
-    SPARKLE_FRAMEWORK="${candidate}"
-    break
-  fi
-done
-
->>>>>>> main
+SPARKLE_FRAMEWORK="$(find "${ROOT}/.build/artifacts" -path '*/macos-arm64_x86_64/Sparkle.framework' -type d 2>/dev/null | head -1)"
+if [[ -z "${SPARKLE_FRAMEWORK}" ]]; then
+  # Older SwiftPM artifact layouts may omit the arch segment.
+  SPARKLE_FRAMEWORK="$(find "${ROOT}/.build/artifacts" -path '*/Sparkle.framework' -type d 2>/dev/null | head -1)"
+fi
 if [[ -z "${SPARKLE_FRAMEWORK}" ]]; then
   echo "ERROR: Could not find Sparkle.framework in .build/artifacts" >&2
   exit 1

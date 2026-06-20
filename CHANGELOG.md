@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/craigharman/gitify/compare/v1.7.0...v1.8.0) (2026-06-20)
+
+
+### Features
+
+* add sidebar push/pull buttons ([#13](https://github.com/craigharman/gitify/issues/13)) ([308ef97](https://github.com/craigharman/gitify/commit/308ef976c959ad7c7e734cc82d66904f1fb44287))
+* fix deploy issue ([#12](https://github.com/craigharman/gitify/issues/12)) ([8ffc097](https://github.com/craigharman/gitify/commit/8ffc097a181415b5c9b3274325f5b64215e4d7d6))
+
 ## [1.7.0](https://github.com/craigharman/gitify/compare/v1.6.0...v1.7.0) (2026-06-19)
 
 

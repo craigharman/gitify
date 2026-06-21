@@ -37,6 +37,12 @@ enum Checks {
         await test("stash branch, config get/set, conflict resolution", stashConfigConflict)
         await test("submodules are listed and parsed", submodules)
         await test("conflict markers parse; resolved file stages", conflictEditor)
+        await test("ahead/behind counts with configured upstream", aheadBehindUpstream)
+        await test("ahead/behind inferred without upstream config", aheadBehindInferred)
+        await test("push clears ahead count", pushClearsAhead)
+        await test("pull clears behind count", pullClearsBehind)
+        await test("fetch updates behind count from remote changes", fetchUpdatesBehind)
+        await test("diverged branch shows both ahead and behind", divergedBranch)
     }
 
     static func conflictEditor() async throws {
@@ -757,5 +763,233 @@ enum Checks {
         let cloned = try await CLIGitService.clone(url: bare.path, into: parent, name: "work", onProgress: nil)
         await expect(FileManager.default.fileExists(atPath: cloned.appendingPathComponent("f.txt").path),
                      "cloned working tree has file")
+    }
+
+    // MARK: - Push/pull indicator tests
+
+    /// Helper: creates a repo with a local bare remote, pushes main with --set-upstream,
+    /// and returns (repo, service, bareURL). Caller must clean up `bareURL`.
+    private static func repoWithRemote() async throws -> (TestRepository, CLIGitService, URL) {
+        let repo = try await TestRepository()
+        try await repo.commit("initial", file: "f.txt", contents: "hello\n")
+        let service = try await repo.service()
+
+        let bare = FileManager.default.temporaryDirectory
+            .appendingPathComponent("indicator-" + UUID().uuidString + ".git")
+        try await GitRunner(workingDirectory: nil).run(["init", "--bare", "-q", bare.path])
+
+        try await repo.git("remote", "add", "origin", bare.path)
+        try await service.push(remote: "origin", branch: "main", setUpstream: true,
+                               force: false, onProgress: nil)
+        return (repo, service, bare)
+    }
+
+    static func aheadBehindUpstream() async throws {
+        let (repo, service, bare) = try await repoWithRemote()
+        defer { try? FileManager.default.removeItem(at: bare) }
+
+        // After initial push with --set-upstream, main should be even (ahead=0, behind=0).
+        var refs = try await service.refs()
+        var main = try await require(refs.first { $0.isHead && $0.name == "main" },
+                                     "main branch found")
+        await expectEqual(main.upstream, "origin/main", "upstream is configured")
+        // When even, git\u{2019}s %(upstream:track) is empty so the parser returns nil.
+        await expect(main.ahead == nil, "even after push: ahead is nil")
+        await expect(main.behind == nil, "even after push: behind is nil")
+
+        // Make two local commits \u{2014} ahead should increase to 2.
+        try await repo.commit("local-1", file: "a.txt", contents: "1\n")
+        try await repo.commit("local-2", file: "b.txt", contents: "2\n")
+
+        refs = try await service.refs()
+        main = try await require(refs.first { $0.isHead && $0.name == "main" },
+                                 "main after local commits")
+        await expectEqual(main.ahead, 2, "two commits ahead")
+        await expect(main.behind == nil, "still nil behind")
+    }
+
+    static func aheadBehindInferred() async throws {
+        let (repo, service, bare) = try await repoWithRemote()
+        defer { try? FileManager.default.removeItem(at: bare) }
+
+        // Create a branch without configuring its upstream tracking.
+        try await repo.git("checkout", "-q", "-b", "feature")
+        // Push without --set-upstream so no tracking config is written.
+        try await service.push(remote: "origin", branch: "feature", setUpstream: false,
+                               force: false, onProgress: nil)
+        // Fetch so the remote ref is known locally.
+        try await service.fetch(remote: "origin", onProgress: nil)
+
+        // Make a local commit on feature.
+        try await repo.commit("feature work", file: "feat.txt", contents: "work\n")
+
+        let refs = try await service.refs()
+        let feature = try await require(refs.first { $0.isHead && $0.name == "feature" },
+                                        "feature branch found")
+        // No configured upstream, but refs() should infer ahead/behind from origin/feature.
+        await expect(feature.upstream == nil, "no configured upstream")
+        await expectEqual(feature.ahead, 1, "inferred 1 ahead of origin/feature")
+        await expectEqual(feature.behind, 0, "inferred 0 behind origin/feature")
+    }
+
+    static func pushClearsAhead() async throws {
+        let (repo, service, bare) = try await repoWithRemote()
+        defer { try? FileManager.default.removeItem(at: bare) }
+
+        // Create local commits.
+        try await repo.commit("to-push-1", file: "p1.txt", contents: "1\n")
+        try await repo.commit("to-push-2", file: "p2.txt", contents: "2\n")
+
+        // Verify ahead before push.
+        var refs = try await service.refs()
+        var main = try await require(refs.first { $0.isHead }, "HEAD before push")
+        await expectEqual(main.ahead, 2, "2 ahead before push")
+
+        // Push and re-check \u{2014} ahead should drop to nil (even).
+        try await service.push(remote: nil, branch: nil, setUpstream: false,
+                               force: false, onProgress: nil)
+        // Fetch to update remote tracking refs.
+        try await service.fetch(remote: "origin", onProgress: nil)
+
+        refs = try await service.refs()
+        main = try await require(refs.first { $0.isHead }, "HEAD after push")
+        await expect(main.ahead == nil, "ahead cleared after push")
+        await expect(main.behind == nil, "behind still nil after push")
+    }
+
+    static func pullClearsBehind() async throws {
+        let (repo, service, bare) = try await repoWithRemote()
+        defer { try? FileManager.default.removeItem(at: bare) }
+
+        // Simulate remote-side commits by cloning the bare repo, committing there,
+        // and pushing back.
+        let otherDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("other-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: otherDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: otherDir) }
+
+        let otherURL = try await CLIGitService.clone(url: bare.path, into: otherDir,
+                                                     name: "clone", onProgress: nil)
+        let otherRunner = GitRunner(workingDirectory: otherURL)
+        try await otherRunner.run(["config", "user.name", "Other"])
+        try await otherRunner.run(["config", "user.email", "other@example.com"])
+        try await otherRunner.run(["config", "commit.gpgsign", "false"])
+        try "remote change 1\n".write(to: otherURL.appendingPathComponent("r1.txt"),
+                                      atomically: true, encoding: .utf8)
+        try await otherRunner.run(["add", "r1.txt"])
+        try await otherRunner.run(["commit", "-q", "-m", "remote-1"])
+        try "remote change 2\n".write(to: otherURL.appendingPathComponent("r2.txt"),
+                                      atomically: true, encoding: .utf8)
+        try await otherRunner.run(["add", "r2.txt"])
+        try await otherRunner.run(["commit", "-q", "-m", "remote-2"])
+        try await otherRunner.run(["push", "origin", "main"])
+
+        // Fetch in our repo so we see the remote commits.
+        try await service.fetch(remote: "origin", onProgress: nil)
+
+        var refs = try await service.refs()
+        var main = try await require(refs.first { $0.isHead }, "HEAD after fetch")
+        await expectEqual(main.behind, 2, "2 behind after fetch")
+        await expect(main.ahead == nil, "0 ahead")
+
+        // Pull should bring us even.
+        try await service.pull(rebase: false, noRebase: false, onProgress: nil)
+
+        refs = try await service.refs()
+        main = try await require(refs.first { $0.isHead }, "HEAD after pull")
+        await expect(main.behind == nil, "behind cleared after pull")
+        await expect(main.ahead == nil, "ahead still nil after pull")
+
+        // Verify the files actually arrived.
+        await expect(FileManager.default.fileExists(atPath:
+            repo.url.appendingPathComponent("r1.txt").path), "pulled file r1 exists")
+        await expect(FileManager.default.fileExists(atPath:
+            repo.url.appendingPathComponent("r2.txt").path), "pulled file r2 exists")
+    }
+
+    static func fetchUpdatesBehind() async throws {
+        let (repo, service, bare) = try await repoWithRemote()
+        _ = repo // prevent deinit from cleaning up the temp directory
+        defer { try? FileManager.default.removeItem(at: bare) }
+
+        // Before any remote changes, behind should be nil (even).
+        var refs = try await service.refs()
+        var main = try await require(refs.first { $0.isHead }, "HEAD before remote changes")
+        await expect(main.behind == nil, "initially nil behind (even)")
+
+        // Push a commit to the bare remote from a second clone.
+        let otherDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fetcher-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: otherDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: otherDir) }
+
+        let otherURL = try await CLIGitService.clone(url: bare.path, into: otherDir,
+                                                     name: "clone", onProgress: nil)
+        let otherRunner = GitRunner(workingDirectory: otherURL)
+        try await otherRunner.run(["config", "user.name", "Other"])
+        try await otherRunner.run(["config", "user.email", "other@example.com"])
+        try await otherRunner.run(["config", "commit.gpgsign", "false"])
+        try "fetched content\n".write(to: otherURL.appendingPathComponent("remote.txt"),
+                                      atomically: true, encoding: .utf8)
+        try await otherRunner.run(["add", "remote.txt"])
+        try await otherRunner.run(["commit", "-q", "-m", "remote commit"])
+        try await otherRunner.run(["push", "origin", "main"])
+
+        // Before fetch, our repo doesn\u{2019}t know about the remote commit yet.
+        refs = try await service.refs()
+        main = try await require(refs.first { $0.isHead }, "HEAD before fetch")
+        await expect(main.behind == nil, "behind still nil before fetch")
+
+        // After fetch, behind should update to 1.
+        try await service.fetch(remote: "origin", onProgress: nil)
+
+        refs = try await service.refs()
+        main = try await require(refs.first { $0.isHead }, "HEAD after fetch")
+        await expectEqual(main.behind, 1, "behind is 1 after fetch")
+        await expect(main.ahead == nil, "ahead unchanged (nil = even)")
+    }
+
+    static func divergedBranch() async throws {
+        let (repo, service, bare) = try await repoWithRemote()
+        defer { try? FileManager.default.removeItem(at: bare) }
+
+        // Push a commit from a second clone to create remote-side divergence.
+        let otherDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("diverge-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: otherDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: otherDir) }
+
+        let otherURL = try await CLIGitService.clone(url: bare.path, into: otherDir,
+                                                     name: "clone", onProgress: nil)
+        let otherRunner = GitRunner(workingDirectory: otherURL)
+        try await otherRunner.run(["config", "user.name", "Other"])
+        try await otherRunner.run(["config", "user.email", "other@example.com"])
+        try await otherRunner.run(["config", "commit.gpgsign", "false"])
+        try "diverge remote\n".write(to: otherURL.appendingPathComponent("remote.txt"),
+                                     atomically: true, encoding: .utf8)
+        try await otherRunner.run(["add", "remote.txt"])
+        try await otherRunner.run(["commit", "-q", "-m", "remote diverge"])
+        try await otherRunner.run(["push", "origin", "main"])
+
+        // Make a local commit (diverging from the remote).
+        try await repo.commit("local diverge", file: "local.txt", contents: "local\n")
+
+        // Fetch so we see the remote commit.
+        try await service.fetch(remote: "origin", onProgress: nil)
+
+        var refs = try await service.refs()
+        var main = try await require(refs.first { $0.isHead }, "HEAD diverged")
+        await expectEqual(main.ahead, 1, "diverged: 1 ahead")
+        await expectEqual(main.behind, 1, "diverged: 1 behind")
+
+        // Force push should clear ahead (and make remote match local).
+        try await service.push(remote: nil, branch: nil, setUpstream: false,
+                               force: true, onProgress: nil)
+        try await service.fetch(remote: "origin", onProgress: nil)
+
+        refs = try await service.refs()
+        main = try await require(refs.first { $0.isHead }, "HEAD after force push")
+        await expect(main.ahead == nil, "ahead cleared after force push")
+        await expect(main.behind == nil, "behind cleared after force push")
     }
 }

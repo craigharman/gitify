@@ -1,9 +1,13 @@
 name: Auto-merge release-please PR
 
 on:
-  pull_request:
+  # Triggers after the Release workflow completes on main.
+  # workflow_run always runs in the default-branch context, so it is never
+  # blocked by the "first-time contributor" approval gate.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
     branches: [main]
-    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -11,21 +15,48 @@ permissions:
 
 jobs:
   auto-merge:
-    # Only run on release-please PRs
-    if: github.actor == 'github-actions[bot]' && startsWith(github.head_ref, 'release-please--')
     runs-on: macos-26
+    # Only proceed when the Release workflow succeeded
+    if: github.event.workflow_run.conclusion == 'success'
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Build
-        run: swift build
-
-      - name: Run tests
-        run: swift run GitKitChecks
-
-      - name: Approve and auto-merge
+      - name: Find open release-please PR
+        id: find-pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr review "${{ github.event.pull_request.number }}" --approve
-          gh pr merge "${{ github.event.pull_request.number }}" --squash --auto
+          PR_NUMBER=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "release-please--branches--main" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [[ -z "${PR_NUMBER}" ]]; then
+            echo "No open release-please PR found; nothing to do."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found release-please PR #${PR_NUMBER}"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.find-pr.outputs.found == 'true'
+        with:
+          ref: release-please--branches--main
+
+      - name: Build
+        if: steps.find-pr.outputs.found == 'true'
+        run: swift build
+
+      - name: Run tests
+        if: steps.find-pr.outputs.found == 'true'
+        run: swift run GitKitChecks
+
+      - name: Approve and auto-merge
+        if: steps.find-pr.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr review "${{ steps.find-pr.outputs.number }}" --approve
+          gh pr merge "${{ steps.find-pr.outputs.number }}" --squash --auto

@@ -22,6 +22,7 @@ jobs:
         id: release
         with:
           release-type: simple
+          token: ${{ secrets.RELEASE_TOKEN }}
 
   build:
     needs: release-please

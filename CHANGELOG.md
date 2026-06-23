@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/craigharman/gitify/compare/v1.8.3...v1.9.0) (2026-06-20)
+
+
+### Features
+
+* add automerge ([#22](https://github.com/craigharman/gitify/issues/22)) ([6b290b1](https://github.com/craigharman/gitify/commit/6b290b14fee0e41208471fe5068692479abb725d))
+
 ## [1.8.3](https://github.com/craigharman/gitify/compare/v1.8.2...v1.8.3) (2026-06-20)
 
 

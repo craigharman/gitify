@@ -57,8 +57,14 @@ public struct WorkingTreeStatus: Sendable {
     public let isDetached: Bool
     public let files: [FileStatus]
 
-    public var stagedFiles: [FileStatus] { files.filter(\.isStaged) }
-    public var unstagedFiles: [FileStatus] { files.filter { $0.hasUnstagedChanges || $0.isUntracked } }
+    /// Conflicted (unmerged) files. Surfaced separately so they don't masquerade as ordinary
+    /// staged/unstaged edits — an unmerged entry reports both an index and a worktree state.
+    public var conflictedFiles: [FileStatus] { files.filter(\.isConflicted) }
+    public var stagedFiles: [FileStatus] { files.filter { $0.isStaged && !$0.isConflicted } }
+    public var unstagedFiles: [FileStatus] {
+        files.filter { !$0.isConflicted && ($0.hasUnstagedChanges || $0.isUntracked) }
+    }
+    public var hasConflicts: Bool { files.contains(where: \.isConflicted) }
     public var hasChanges: Bool { !files.isEmpty }
 
     public init(

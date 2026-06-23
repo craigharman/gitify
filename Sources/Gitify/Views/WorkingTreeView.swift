@@ -127,9 +127,11 @@ struct WorkingTreeView: View {
 
     private func fileList(_ status: WorkingTreeStatus) -> some View {
         // Build a flat ordered list of FileSelection entries for shift-click range computation.
+        let conflictedFiles = status.conflictedFiles.filter(matches)
         let stagedFiles = status.stagedFiles.filter(matches)
         let unstagedFiles = status.unstagedFiles.filter(matches)
         let orderedSelections: [FileSelection] =
+            conflictedFiles.map { FileSelection(path: $0.path, staged: false) } +
             stagedFiles.map { FileSelection(path: $0.path, staged: true) } +
             unstagedFiles.map { FileSelection(path: $0.path, staged: false) }
 
@@ -138,6 +140,24 @@ struct WorkingTreeView: View {
         let unstagedPeers = selectedUnstagedFiles(in: status)
 
         return List {
+            if !conflictedFiles.isEmpty {
+                Section {
+                    ForEach(conflictedFiles) { file in
+                        ConflictFileRow(file: file, viewModel: viewModel,
+                                        isSelected: selection.contains(FileSelection(path: file.path, staged: false)),
+                                        onResolveInEditor: { conflictTarget = ConflictTarget(path: file.path) },
+                                        onClick: { mods in
+                                            handleRowClick(FileSelection(path: file.path, staged: false),
+                                                           file: file, orderedSelections: orderedSelections, modifiers: mods)
+                                        })
+                    }
+                } header: {
+                    sectionHeader("Conflicts", count: conflictedFiles.count) {
+                        Text("resolve before committing")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                }
+            }
             if !stagedFiles.isEmpty {
                 Section {
                     ForEach(stagedFiles) { file in
@@ -357,6 +377,57 @@ private struct StagingFileRow: View {
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn {
             Task { await viewModel.deleteFiles(files) }
+        }
+    }
+}
+
+/// A conflicted-file row with always-visible resolution actions, so a merge conflict is
+/// obvious and fixable without discovering a hidden context menu.
+private struct ConflictFileRow: View {
+    let file: FileStatus
+    @Bindable var viewModel: RepositoryViewModel
+    let isSelected: Bool
+    var onResolveInEditor: () -> Void
+    var onClick: (NSEvent.ModifierFlags) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            StatusBadge(file: file)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(URL(fileURLWithPath: file.path).lastPathComponent)
+                Text(conflictDescription).font(.caption).foregroundStyle(.orange).lineLimit(1)
+            }
+            Spacer()
+            Button("Resolve…") { onResolveInEditor() }
+                .buttonStyle(.borderless).font(.caption)
+            Menu {
+                Button("Take Ours (current branch)") { Task { await viewModel.resolveConflict(file, useOurs: true) } }
+                Button("Take Theirs (incoming)") { Task { await viewModel.resolveConflict(file, useOurs: false) } }
+                Divider()
+                Button("Mark Resolved") { Task { await viewModel.markResolved(file) } }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .padding(.vertical, 2)
+        .listRowBackground(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture { onClick(currentModifiers()) }
+    }
+
+    /// Human-readable conflict kind derived from the unmerged XY state pair.
+    private var conflictDescription: String {
+        switch (file.indexState, file.worktreeState) {
+        case (.deleted, .deleted): return "both deleted"
+        case (.added, .updatedButUnmerged): return "added by us"
+        case (.updatedButUnmerged, .added): return "added by them"
+        case (.deleted, .updatedButUnmerged): return "deleted by us"
+        case (.updatedButUnmerged, .deleted): return "deleted by them"
+        case (.added, .added): return "both added"
+        case (.updatedButUnmerged, .updatedButUnmerged): return "both modified"
+        default: return "conflicted"
         }
     }
 }

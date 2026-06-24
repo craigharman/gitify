@@ -277,6 +277,7 @@ private struct RepoSwitcher: View {
     let model: AppModel
     let current: RepositoryRef
     @State private var showAccounts = false
+    @State private var showSSHServers = false
 
     var body: some View {
         Menu {
@@ -296,9 +297,10 @@ private struct RepoSwitcher: View {
             Button("Clone Repository…") { Task { await model.promptToClone() } }
             Divider()
             Button("Accounts…") { showAccounts = true }
+            Button("SSH Servers…") { showSSHServers = true }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "shippingbox.fill")
+                Image(systemName: current.isRemote ? "cloud.fill" : "shippingbox.fill")
                     .foregroundStyle(.tint)
                 Text(current.name)
                     .fontWeight(.semibold)
@@ -317,6 +319,7 @@ private struct RepoSwitcher: View {
         .padding(.top, 8)
         .padding(.bottom, 6)
         .sheet(isPresented: $showAccounts) { AccountsView(model: model) }
+        .sheet(isPresented: $showSSHServers) { SSHServersView(model: model) }
     }
 }
 
@@ -793,6 +796,7 @@ private struct ErrorBanner: View {
         .frame(maxWidth: .infinity)
         .background(.red.opacity(0.15))
         .overlay(Rectangle().frame(height: 1).foregroundStyle(.red.opacity(0.3)), alignment: .bottom)
+        .clipped()
     }
 }
 
@@ -831,5 +835,6 @@ private struct OperationBanner: View {
         .frame(maxWidth: .infinity)
         .background(.orange.opacity(0.15))
         .overlay(Rectangle().frame(height: 1).foregroundStyle(.orange.opacity(0.4)), alignment: .bottom)
+        .clipped()
     }
 }

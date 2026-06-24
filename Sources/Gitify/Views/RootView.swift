@@ -4,6 +4,7 @@ import SwiftUI
 /// sidebar + detail split), or an empty state when no repository is open.
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @State private var showSSHServers = false
 
     var body: some View {
         Group {
@@ -19,6 +20,7 @@ struct RootView: View {
                 } actions: {
                     Button("Add Repository…") { Task { await model.promptToAddRepository() } }
                     Button("Clone Repository…") { Task { await model.promptToClone() } }
+                    Button("SSH Servers…") { showSSHServers = true }
                 }
             }
         }
@@ -40,5 +42,6 @@ struct RootView: View {
                 }
             }
         }
+        .sheet(isPresented: $showSSHServers) { SSHServersView(model: model) }
     }
 }

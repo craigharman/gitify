@@ -1,9 +1,15 @@
 import Foundation
 
+/// Common interface for local (FSEvents) and remote (SSH polling) repository watchers.
+public protocol RepositoryWatching: AnyObject, Sendable {
+    func start()
+    func stop()
+}
+
 /// Watches a repository's working tree (and its `.git` directory) with FSEvents, invoking
 /// `onChange` when anything changes on disk. Events are coalesced by FSEvents' latency
 /// window; callers should debounce further before doing expensive work.
-public final class RepositoryWatcher: @unchecked Sendable {
+public final class RepositoryWatcher: RepositoryWatching, @unchecked Sendable {
     private let path: String
     private let onChange: @Sendable () -> Void
     private let queue = DispatchQueue(label: "com.gitify.repository-watcher", qos: .utility)

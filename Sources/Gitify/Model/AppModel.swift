@@ -21,12 +21,17 @@ final class AppModel {
     // Hosting accounts (GitHub/GitLab) authenticated by personal access token.
     private(set) var accounts: [HostingAccount]
 
+    // SSH server connections for browsing and cloning remote repositories.
+    private(set) var sshServers: [SSHServer]
+
     private let store = RepositoryStore()
     private let accountStore = AccountStore()
+    private let sshServerStore = SSHServerStore()
 
     init() {
         repositories = store.load()
         accounts = accountStore.load()
+        sshServers = sshServerStore.load()
         // Restore the repository open in the previous session if it still exists,
         // otherwise fall back to the first in the list.
         let savedID = UserDefaults.standard.string(forKey: Self.lastSelectedKey)
@@ -99,6 +104,61 @@ final class AppModel {
         let body = String(clone.dropFirst("https://".count))
         let user = provider == .github ? token : "oauth2:\(token)"
         return "https://\(user)@\(body)"
+    }
+
+    // MARK: - SSH servers
+
+    func addSSHServer(_ server: SSHServer) {
+        guard !sshServers.contains(where: { $0.id == server.id }) else { return }
+        sshServers.append(server)
+        sshServerStore.save(sshServers)
+    }
+
+    func removeSSHServer(_ server: SSHServer) {
+        sshServers.removeAll { $0.id == server.id }
+        sshServerStore.save(sshServers)
+    }
+
+    /// Clones a repository discovered on an SSH server.
+    func clone(_ repo: SSHRepo) async {
+        guard !isCloning else { return }
+        guard let parent = Prompt.chooseDirectory(prompt: "Clone Here",
+                                                  message: "Choose where to clone \(repo.name)") else { return }
+        cloneProgress = "Starting\u{2026}"
+        defer { cloneProgress = nil }
+        let progress: @Sendable (String) -> Void = { [weak self] line in
+            Task { @MainActor in self?.cloneProgress = line }
+        }
+        do {
+            let dest = try await CLIGitService.clone(url: repo.cloneURL, into: parent, onProgress: progress)
+            await add(directory: dest)
+        } catch {
+            presentError("Clone failed: \(error)")
+        }
+    }
+
+    /// Opens a remote repository over SSH without cloning it locally.
+    func openRemote(_ repo: SSHRepo, server: SSHServer) async {
+        // Check for duplicates.
+        if let existing = repositories.first(where: { $0.path == repo.path && $0.sshHost == server.host }) {
+            selectedRepositoryID = existing.id
+            return
+        }
+        // Validate the remote repo is accessible.
+        let runner = SSHGitRunner(host: server.host, user: server.user,
+                                  port: server.port, remotePath: repo.path)
+        let result = try? await runner.runRaw(["rev-parse", "--show-toplevel"])
+        guard let result, result.succeeded else {
+            presentError("Could not open remote repository.")
+            return
+        }
+        let ref = RepositoryRef(
+            path: repo.path, name: repo.name,
+            sshHost: server.host, sshUser: server.user, sshPort: server.port
+        )
+        repositories.append(ref)
+        store.save(repositories)
+        selectedRepositoryID = ref.id
     }
 
     var selectedRepository: RepositoryRef? {

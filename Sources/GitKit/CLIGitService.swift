@@ -9,10 +9,10 @@ private let recordSeparator = "\u{1e}" // between records
 /// `GitService` backed by the user's installed `git` binary.
 public struct CLIGitService: GitService {
     public let root: URL
-    private let runner: GitRunner
+    private let runner: any GitRunnerProtocol
 
-    /// Creates a service rooted at `directory`. Resolves to the repository top-level so
-    /// that all paths are reported relative to a stable root.
+    /// Creates a service rooted at a local `directory`. Resolves to the repository
+    /// top-level so that all paths are reported relative to a stable root.
     public init(directory: URL, executablePath: String? = nil) async throws {
         let probe = GitRunner(workingDirectory: directory, executablePath: executablePath)
         let result = try await probe.runRaw(["rev-parse", "--show-toplevel"])
@@ -22,6 +22,17 @@ public struct CLIGitService: GitService {
         let top = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
         self.root = URL(fileURLWithPath: top)
         self.runner = GitRunner(workingDirectory: self.root, executablePath: executablePath)
+    }
+
+    /// Creates a service for a remote repository accessed over SSH.
+    public init(sshRunner: SSHGitRunner) async throws {
+        let result = try await sshRunner.runRaw(["rev-parse", "--show-toplevel"])
+        guard result.succeeded else {
+            throw GitError.notARepository(sshRunner.remotePath)
+        }
+        let top = result.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.root = URL(fileURLWithPath: top)
+        self.runner = sshRunner
     }
 
     /// Discovers the repository top-level for an arbitrary path, returning nil if none.

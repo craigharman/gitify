@@ -1,99 +1,84 @@
 import Foundation
 
-/// The result of running a `git` process.
-public struct GitProcessResult: Sendable {
-    public let exitCode: Int32
-    public let stdout: Data
-    public let stderr: String
-
-    public var stdoutString: String { String(decoding: stdout, as: UTF8.self) }
-    public var succeeded: Bool { exitCode == 0 }
-}
-
-/// A streamed line of progress emitted on `git`'s stderr (e.g. clone/fetch/push).
-public struct GitProgressLine: Sendable {
-    public let text: String
-}
-
-/// Mutable storage shared across the pipe-reading dispatch closures. Access is synchronized
-/// by the surrounding `DispatchGroup` (writes complete before `group.wait()` returns), so
-/// `@unchecked Sendable` is sound here.
-private final class CaptureBox: @unchecked Sendable {
+/// Mutable storage shared across pipe-reading dispatch closures. Access is synchronized
+/// by the surrounding `DispatchGroup`, so `@unchecked Sendable` is sound.
+private final class SSHCaptureBox: @unchecked Sendable {
     var stdout = Data()
     var stderr = Data()
     var stderrText = ""
 }
 
-/// Serializes invocations of the user's `git` binary for a single repository.
+/// Executes git commands on a remote server over SSH.
 ///
-/// We shell out to the installed `git` (rather than libgit2) so that semantics,
-/// config, and credentials always match the user's environment, and so advanced
-/// features (worktrees, complex rebases) work without libgit2's gaps.
+/// Drop-in replacement for `GitRunner` that wraps every git invocation in
+/// `ssh user@host git -C /path <args>`. The user\u{2019}s SSH config, agent, and keys
+/// handle authentication transparently.
 ///
-/// An actor enforces one mutating invocation at a time per repository, avoiding
-/// `index.lock` contention while still allowing concurrency across repositories.
-public actor GitRunner: GitRunnerProtocol {
-    /// Working directory for invocations. `nil` for repo-independent commands (e.g. clone, version).
+/// Like `GitRunner`, the actor serialises invocations to prevent `index.lock` contention
+/// on the remote repository.
+public actor SSHGitRunner: GitRunnerProtocol {
     public let workingDirectory: URL?
-    private let executableURL: URL
+    public let remotePath: String
+    private let host: String
+    private let user: String
+    private let port: Int
+    private let sshURL: URL
 
-    /// Environment applied to every invocation. We disable interactive prompts so that
-    /// missing credentials surface as errors rather than hanging on a TTY read.
-    private static let baseEnvironment: [String: String] = {
-        var env = ProcessInfo.processInfo.environment
-        env["GIT_TERMINAL_PROMPT"] = "0"
-        env["GIT_OPTIONAL_LOCKS"] = "0"
-        env["LC_ALL"] = "C"
-        // Prevent git from trying to open an interactive editor (e.g. during rebase
-        // --continue). The GUI supplies messages via -m / -F where needed.
-        env["GIT_EDITOR"] = "true"
-        // Restrict transports to well-known ones, blocking command-executing pseudo-protocols
-        // like `ext::` / `fd::` that a malicious clone/remote URL could otherwise smuggle.
-        env["GIT_ALLOW_PROTOCOL"] = "https:http:ssh:git:file"
-        return env
-    }()
-
-    public init(workingDirectory: URL?, executablePath: String? = nil) {
-        self.workingDirectory = workingDirectory
-        self.executableURL = URL(fileURLWithPath: executablePath ?? GitRunner.defaultGitPath)
+    public init(host: String, user: String = "git", port: Int = 22, remotePath: String) {
+        self.host = host
+        self.user = user
+        self.port = port
+        self.remotePath = remotePath
+        // Synthetic URL for identity/display purposes only.
+        self.workingDirectory = URL(fileURLWithPath: remotePath)
+        self.sshURL = URL(fileURLWithPath: SSHGitRunner.sshPath)
     }
 
-    /// Best-effort discovery of the `git` binary. Falls back to the common Apple path.
-    public static let defaultGitPath: String = {
-        let candidates = ["/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git"]
+    private static let sshPath: String = {
+        let candidates = ["/usr/bin/ssh", "/opt/homebrew/bin/ssh", "/usr/local/bin/ssh"]
         for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
             return path
         }
-        return "/usr/bin/git"
+        return "/usr/bin/ssh"
     }()
 
-    /// Runs `git <arguments>` and returns the captured result without throwing on non-zero exit.
+    /// Builds the SSH arguments for running a git command remotely.
     ///
-    /// The entire invocation runs on a background dispatch queue — never the Swift
-    /// cooperative thread pool — so the blocking `waitUntilExit()` cannot starve it. Both
-    /// pipes are drained concurrently on their own queues before we wait, avoiding the
-    /// classic Foundation deadlock when output exceeds the pipe buffer.
+    /// The remote command is constructed as a single shell string so that git format
+    /// strings containing control characters (\u{1f}, \u{1e}) survive the SSH transport.
+    /// Environment variables are set via `env` to match the local `GitRunner` behaviour.
+    private func sshArgs(gitArguments: [String]) -> [String] {
+        let quotedPath = shellQuote(remotePath)
+        let quotedGitArgs = gitArguments.map { shellQuote($0) }.joined(separator: " ")
+        let remoteCommand = "LC_ALL=C GIT_TERMINAL_PROMPT=0 GIT_OPTIONAL_LOCKS=0 GIT_EDITOR=true GIT_ALLOW_PROTOCOL=https:http:ssh:git:file git -C \(quotedPath) \(quotedGitArgs)"
+
+        return [
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=10",
+            "-o", "StrictHostKeyChecking=accept-new",
+            "-p", String(port),
+            "-l", user,
+            host,
+            remoteCommand,
+        ]
+    }
+
     public func runRaw(_ arguments: [String]) async throws -> GitProcessResult {
-        let executableURL = self.executableURL
-        let workingDirectory = self.workingDirectory
-        let environment = GitRunner.baseEnvironment
+        let sshURL = self.sshURL
+        let args = sshArgs(gitArguments: arguments)
 
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
-                process.executableURL = executableURL
-                process.arguments = arguments
-                process.environment = environment
-                if let workingDirectory {
-                    process.currentDirectoryURL = workingDirectory
-                }
+                process.executableURL = sshURL
+                process.arguments = args
 
                 let stdoutPipe = Pipe()
                 let stderrPipe = Pipe()
                 process.standardOutput = stdoutPipe
                 process.standardError = stderrPipe
 
-                let box = CaptureBox()
+                let box = SSHCaptureBox()
                 let group = DispatchGroup()
                 group.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -110,12 +95,12 @@ public actor GitRunner: GitRunnerProtocol {
                     try process.run()
                 } catch {
                     continuation.resume(throwing: GitError.gitUnavailable(
-                        "\(executableURL.path): \(error.localizedDescription)"))
+                        "SSH connection failed: \(error.localizedDescription)"))
                     return
                 }
 
                 process.waitUntilExit()
-                group.wait() // ensure both pipes fully drained before reporting
+                group.wait()
 
                 continuation.resume(returning: GitProcessResult(
                     exitCode: process.terminationStatus,
@@ -126,8 +111,6 @@ public actor GitRunner: GitRunnerProtocol {
         }
     }
 
-    /// Runs `git <arguments>`, throwing `GitError.commandFailed` on a non-zero exit.
-    /// Returns stdout as `Data` to support `-z` (NUL-delimited) output.
     @discardableResult
     public func run(_ arguments: [String]) async throws -> Data {
         let result = try await runRaw(arguments)
@@ -141,37 +124,30 @@ public actor GitRunner: GitRunnerProtocol {
         return result.stdout
     }
 
-    /// Convenience: run and decode stdout as a UTF-8 string.
     public func runString(_ arguments: [String]) async throws -> String {
         String(decoding: try await run(arguments), as: UTF8.self)
     }
 
-    /// Runs `git <arguments>`, streaming stderr progress lines to `onProgress` as they
-    /// arrive (git writes `--progress` output to stderr, updating in place with `\r`).
-    /// Throws `GitError.commandFailed` on a non-zero exit.
     @discardableResult
     public func runStreaming(
         _ arguments: [String],
         onProgress: (@Sendable (String) -> Void)? = nil
     ) async throws -> GitProcessResult {
-        let executableURL = self.executableURL
-        let workingDirectory = self.workingDirectory
-        let environment = GitRunner.baseEnvironment
+        let sshURL = self.sshURL
+        let args = sshArgs(gitArguments: arguments)
 
         let result: GitProcessResult = try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
-                process.executableURL = executableURL
-                process.arguments = arguments
-                process.environment = environment
-                if let workingDirectory { process.currentDirectoryURL = workingDirectory }
+                process.executableURL = sshURL
+                process.arguments = args
 
                 let stdoutPipe = Pipe()
                 let stderrPipe = Pipe()
                 process.standardOutput = stdoutPipe
                 process.standardError = stderrPipe
 
-                let box = CaptureBox()
+                let box = SSHCaptureBox()
                 let group = DispatchGroup()
 
                 group.enter()
@@ -187,7 +163,6 @@ public actor GitRunner: GitRunnerProtocol {
                         let text = String(decoding: chunk, as: UTF8.self)
                         box.stderrText += text
                         pending += text
-                        // Progress updates are delimited by \r or \n.
                         var line = ""
                         for character in pending {
                             if character == "\r" || character == "\n" {
@@ -207,7 +182,7 @@ public actor GitRunner: GitRunnerProtocol {
                     try process.run()
                 } catch {
                     continuation.resume(throwing: GitError.gitUnavailable(
-                        "\(executableURL.path): \(error.localizedDescription)"))
+                        "SSH connection failed: \(error.localizedDescription)"))
                     return
                 }
 
@@ -223,5 +198,19 @@ public actor GitRunner: GitRunnerProtocol {
                                          exitCode: result.exitCode, stderr: result.stderr)
         }
         return result
+    }
+
+    /// Shell-quotes a string for safe inclusion in the remote command.
+    /// Preserves tilde expansion for paths starting with `~/` or bare `~`.
+    private func shellQuote(_ string: String) -> String {
+        if string == "~" { return "~" }
+        if string.hasPrefix("~/") {
+            return "~/" + singleQuote(String(string.dropFirst(2)))
+        }
+        return singleQuote(string)
+    }
+
+    private func singleQuote(_ string: String) -> String {
+        "'" + string.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

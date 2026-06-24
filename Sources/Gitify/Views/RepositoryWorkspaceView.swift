@@ -300,7 +300,7 @@ private struct RepoSwitcher: View {
             Button("SSH Servers…") { showSSHServers = true }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "shippingbox.fill")
+                Image(systemName: current.isRemote ? "cloud.fill" : "shippingbox.fill")
                     .foregroundStyle(.tint)
                 Text(current.name)
                     .fontWeight(.semibold)

@@ -137,6 +137,30 @@ final class AppModel {
         }
     }
 
+    /// Opens a remote repository over SSH without cloning it locally.
+    func openRemote(_ repo: SSHRepo, server: SSHServer) async {
+        // Check for duplicates.
+        if let existing = repositories.first(where: { $0.path == repo.path && $0.sshHost == server.host }) {
+            selectedRepositoryID = existing.id
+            return
+        }
+        // Validate the remote repo is accessible.
+        let runner = SSHGitRunner(host: server.host, user: server.user,
+                                  port: server.port, remotePath: repo.path)
+        let result = try? await runner.runRaw(["rev-parse", "--show-toplevel"])
+        guard let result, result.succeeded else {
+            presentError("Could not open remote repository.")
+            return
+        }
+        let ref = RepositoryRef(
+            path: repo.path, name: repo.name,
+            sshHost: server.host, sshUser: server.user, sshPort: server.port
+        )
+        repositories.append(ref)
+        store.save(repositories)
+        selectedRepositoryID = ref.id
+    }
+
     var selectedRepository: RepositoryRef? {
         repositories.first { $0.id == selectedRepositoryID }
     }

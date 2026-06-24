@@ -53,7 +53,7 @@ final class RepositoryViewModel {
 
     private var service: CLIGitService?
     private var nextSkip: Int? = 0
-    private var watcher: RepositoryWatcher?
+    private var watcher: (any RepositoryWatching)?
     private var autoRefreshTask: Task<Void, Never>?
 
     init(ref: RepositoryRef) {
@@ -291,7 +291,14 @@ final class RepositoryViewModel {
 
     private func resolveService() async throws -> CLIGitService {
         if let service { return service }
-        let service = try await CLIGitService(directory: ref.url)
+        let service: CLIGitService
+        if let host = ref.sshHost {
+            let runner = SSHGitRunner(host: host, user: ref.sshUser ?? "git",
+                                      port: ref.sshPort ?? 22, remotePath: ref.path)
+            service = try await CLIGitService(sshRunner: runner)
+        } else {
+            service = try await CLIGitService(directory: ref.url)
+        }
         self.service = service
         startWatching(root: service.root)
         return service
@@ -303,11 +310,22 @@ final class RepositoryViewModel {
     /// commands) refresh the UI automatically.
     private func startWatching(root: URL) {
         guard watcher == nil else { return }
-        let watcher = RepositoryWatcher(root: root) { [weak self] in
+        let onChange: @Sendable () -> Void = { [weak self] in
             Task { @MainActor in self?.scheduleAutoRefresh() }
         }
-        watcher.start()
-        self.watcher = watcher
+        if let host = ref.sshHost {
+            let sshWatcher = SSHRepositoryWatcher(
+                host: host, user: ref.sshUser ?? "git",
+                port: ref.sshPort ?? 22, remotePath: ref.path,
+                onChange: onChange
+            )
+            sshWatcher.start()
+            self.watcher = sshWatcher
+        } else {
+            let fsWatcher = RepositoryWatcher(root: root, onChange: onChange)
+            fsWatcher.start()
+            self.watcher = fsWatcher
+        }
     }
 
     /// Debounces filesystem events into a single reload, skipping while a load or network

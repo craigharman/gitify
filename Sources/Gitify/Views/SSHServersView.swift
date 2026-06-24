@@ -128,6 +128,9 @@ struct SSHServersView: View {
                                     .lineLimit(1).truncationMode(.middle)
                             }
                             Spacer()
+                            Button("Open") {
+                                Task { await model.openRemote(repo, server: server); dismiss() }
+                            }
                             Button("Clone") {
                                 Task { await model.clone(repo); dismiss() }
                             }

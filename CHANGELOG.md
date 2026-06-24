@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/craigharman/gitify/compare/v1.9.1...v1.10.0) (2026-06-24)
+
+
+### Features
+
+* add remote SSH git repository management ([#26](https://github.com/craigharman/gitify/issues/26)) ([4fb4bf1](https://github.com/craigharman/gitify/commit/4fb4bf13db9ec857ed3c10922edbcea5201b5cbf))
+
 ## [1.9.1](https://github.com/craigharman/gitify/compare/v1.9.0...v1.9.1) (2026-06-23)
 
 

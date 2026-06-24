@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.10.0](https://github.com/craigharman/gitify/compare/v1.9.1...v1.10.0) (2026-06-24)
+
+
+### Features
+
+* add remote SSH git repository management ([#26](https://github.com/craigharman/gitify/issues/26)) ([4fb4bf1](https://github.com/craigharman/gitify/commit/4fb4bf13db9ec857ed3c10922edbcea5201b5cbf))
+
+## [1.9.1](https://github.com/craigharman/gitify/compare/v1.9.0...v1.9.1) (2026-06-23)
+
+
+### Bug Fixes
+
+* merge conflicts not visible when changes are staged ([#24](https://github.com/craigharman/gitify/issues/24)) ([fa20ee4](https://github.com/craigharman/gitify/commit/fa20ee49ca4cad67e2f875539b1e3df3891deddc))
+
 ## [1.9.0](https://github.com/craigharman/gitify/compare/v1.8.3...v1.9.0) (2026-06-20)
 
 

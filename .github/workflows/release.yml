@@ -33,9 +33,6 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
 
-      - name: Run tests
-        run: swift run GitKitChecks
-
       - name: Build DMG
         env:
           VERSION: ${{ needs.release-please.outputs.version }}

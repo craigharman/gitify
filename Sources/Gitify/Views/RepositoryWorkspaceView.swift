@@ -72,7 +72,6 @@ struct RepositoryWorkspaceView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle(sectionTitle)
-            .toolbarBackground(.visible, for: .windowToolbar)
             .background(.background)
         }
         .onChange(of: section) { _, new in
@@ -797,6 +796,7 @@ private struct ErrorBanner: View {
         .frame(maxWidth: .infinity)
         .background(.red.opacity(0.15))
         .overlay(Rectangle().frame(height: 1).foregroundStyle(.red.opacity(0.3)), alignment: .bottom)
+        .clipped()
     }
 }
 
@@ -835,5 +835,6 @@ private struct OperationBanner: View {
         .frame(maxWidth: .infinity)
         .background(.orange.opacity(0.15))
         .overlay(Rectangle().frame(height: 1).foregroundStyle(.orange.opacity(0.4)), alignment: .bottom)
+        .clipped()
     }
 }

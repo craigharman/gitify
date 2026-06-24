@@ -72,6 +72,7 @@ struct RepositoryWorkspaceView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle(sectionTitle)
+            .toolbarBackground(.visible, for: .windowToolbar)
             .background(.background)
         }
         .onChange(of: section) { _, new in

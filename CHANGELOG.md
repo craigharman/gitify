@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/craigharman/gitify/compare/v1.10.0...v1.11.0) (2026-06-27)
+
+
+### Features
+
+* add "scan folders" to allow bulk import of repositories ([#28](https://github.com/craigharman/gitify/issues/28)) ([94f2352](https://github.com/craigharman/gitify/commit/94f2352dd6b5402f8f9ffe5fe5d2f8c5b7737a48))
+
 ## [1.10.0](https://github.com/craigharman/gitify/compare/v1.9.1...v1.10.0) (2026-06-24)
 
 

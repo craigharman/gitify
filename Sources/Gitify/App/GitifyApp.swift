@@ -30,6 +30,10 @@ struct GitifyApp: App {
                     Task { await model.promptToAddRepository() }
                 }
                 .keyboardShortcut("o", modifiers: [.command])
+                Button("Scan Folder…") {
+                    Task { await model.promptToScanFolder() }
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
             }
         }
     }

@@ -215,6 +215,48 @@ final class AppModel {
         }
     }
 
+    /// Prompts for a parent folder, scans its immediate subdirectories for Git repositories,
+    /// and adds all that are found.
+    func promptToScanFolder() async {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Scan"
+        panel.message = "Choose a folder to scan for Git repositories"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let dirs = contents.filter {
+            (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+
+        var added: [RepositoryRef] = []
+        for dir in dirs {
+            guard let root = await CLIGitService.repositoryRoot(for: dir) else { continue }
+            guard !repositories.contains(where: { $0.path == root.path }) else { continue }
+            let ref = RepositoryRef(path: root.path)
+            repositories.append(ref)
+            added.append(ref)
+        }
+
+        if added.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "No repositories found"
+            alert.informativeText = "No Git repositories were found in the immediate subfolders of \u{201c}\(url.lastPathComponent)\u{201d}."
+            alert.alertStyle = .informational
+            alert.runModal()
+        } else {
+            store.save(repositories)
+            selectedRepositoryID = added.first?.id
+        }
+    }
+
     func remove(_ ref: RepositoryRef) {
         repositories.removeAll { $0.id == ref.id }
         store.save(repositories)

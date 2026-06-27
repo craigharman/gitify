@@ -56,7 +56,7 @@ jobs:
       - name: Approve and auto-merge
         if: steps.find-pr.outputs.found == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           gh pr review "${{ steps.find-pr.outputs.number }}" --approve
           gh pr merge "${{ steps.find-pr.outputs.number }}" --squash --auto

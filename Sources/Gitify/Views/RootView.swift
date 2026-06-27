@@ -20,6 +20,7 @@ struct RootView: View {
                 } actions: {
                     Button("Add Repository…") { Task { await model.promptToAddRepository() } }
                     Button("Clone Repository…") { Task { await model.promptToClone() } }
+                    Button("Scan Folder…") { Task { await model.promptToScanFolder() } }
                     Button("SSH Servers…") { showSSHServers = true }
                 }
             }

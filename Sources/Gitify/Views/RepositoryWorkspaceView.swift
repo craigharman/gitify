@@ -295,6 +295,7 @@ private struct RepoSwitcher: View {
             Divider()
             Button("Add Existing Repository…") { Task { await model.promptToAddRepository() } }
             Button("Clone Repository…") { Task { await model.promptToClone() } }
+            Button("Scan Folder…") { Task { await model.promptToScanFolder() } }
             Divider()
             Button("Accounts…") { showAccounts = true }
             Button("SSH Servers…") { showSSHServers = true }

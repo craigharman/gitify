@@ -7,6 +7,7 @@ enum AppDefaults {
 
     private static let terminalKey = "defaultTerminalBundleID"
     private static let editorKey = "defaultEditorBundleID"
+    private static let lastSeenVersionKey = "whatsNew.lastSeenVersion"
 
     // MARK: - Accessors
 
@@ -20,6 +21,12 @@ enum AppDefaults {
     static var editorBundleID: String? {
         get { UserDefaults.standard.string(forKey: editorKey) }
         set { UserDefaults.standard.set(newValue, forKey: editorKey) }
+    }
+
+    /// The app version the user last saw the \u{201c}What\u{2019}s New\u{201d} sheet for.
+    static var lastSeenVersion: String? {
+        get { UserDefaults.standard.string(forKey: lastSeenVersionKey) }
+        set { UserDefaults.standard.set(newValue, forKey: lastSeenVersionKey) }
     }
 
     /// Resolves a bundle identifier to an application URL, or `nil` if not installed.

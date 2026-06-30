@@ -21,7 +21,10 @@ let package = Package(
                 "GitKit",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
-            resources: [.copy("Resources/AppIcon.icns")]
+            resources: [
+                .copy("Resources/AppIcon.icns"),
+                .copy("Resources/CHANGELOG.md"),
+            ]
         ),
         // Full Xcode (XCTest / swift-testing) isn't installed, so the engine's
         // verification suite runs as a standalone executable harness instead.

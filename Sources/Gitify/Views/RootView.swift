@@ -5,6 +5,7 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @State private var showSSHServers = false
+    @State private var whatsNewEntries: WhatsNewContent?
 
     var body: some View {
         Group {
@@ -44,5 +45,26 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showSSHServers) { SSHServersView(model: model) }
+        .sheet(item: $whatsNewEntries) { entries in
+            WhatsNewView(entries: entries.items)
+        }
+        .onChange(of: whatsNewEntries?.id) { old, new in
+            if old != nil, new == nil {
+                AppDefaults.lastSeenVersion = currentAppVersion
+            }
+        }
+        .task {
+            let version = currentAppVersion
+            guard version != AppDefaults.lastSeenVersion else { return }
+            guard let url = Bundle.module.url(forResource: "CHANGELOG", withExtension: "md"),
+                  let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+            let entries = ChangelogParser.parse(text)
+            guard !entries.isEmpty else { return }
+            whatsNewEntries = WhatsNewContent(items: entries)
+        }
+    }
+
+    private var currentAppVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
     }
 }

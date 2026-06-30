@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/craigharman/gitify/compare/v1.12.0...v1.13.0) (2026-06-30)
+
+
+### Features
+
+* what's new changelog on update ([#32](https://github.com/craigharman/gitify/issues/32)) ([2e7dc1d](https://github.com/craigharman/gitify/commit/2e7dc1d7f53e01196e75772b92982502afad85c5))
+
 ## [1.12.0](https://github.com/craigharman/gitify/compare/v1.11.0...v1.12.0) (2026-06-30)
 
 

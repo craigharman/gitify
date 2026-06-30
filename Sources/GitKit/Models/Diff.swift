@@ -78,7 +78,27 @@ public struct FileDiff: Sendable {
         self.header = header
     }
 
+    /// Whether the file has a recognised image extension.
+    public var isImage: Bool {
+        Self.imageExtensions.contains((path as NSString).pathExtension.lowercased())
+    }
+
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "tiff", "tif", "bmp", "svg", "ico", "heic", "heif",
+    ]
+
     public static func empty(path: String) -> FileDiff {
         FileDiff(path: path, oldPath: nil, isBinary: false, isNew: false, isDeleted: false, hunks: [])
+    }
+}
+
+/// The old and new image data for a binary image diff.
+public struct ImageDiffData: Sendable {
+    public let oldImage: Data?
+    public let newImage: Data?
+
+    public init(oldImage: Data?, newImage: Data?) {
+        self.oldImage = oldImage
+        self.newImage = newImage
     }
 }

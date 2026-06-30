@@ -11,7 +11,7 @@ struct CommitDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             metadata
             Divider()
-            ChangesetDiffPane(ref: commit.id, viewModel: viewModel)
+            ChangesetDiffPane(ref: commit.id, parentSHA: commit.parents.first, viewModel: viewModel)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -46,11 +46,13 @@ struct CommitDetailView: View {
 /// changed files with +/- counts on top, and the selected file's diff below.
 struct ChangesetDiffPane: View {
     let ref: String
+    var parentSHA: String? = nil
     let viewModel: RepositoryViewModel
 
     @State private var changes: [FileChange] = []
     @State private var selectedFile: String?
     @State private var fileDiff: FileDiff?
+    @State private var imageDiffData: ImageDiffData?
     @State private var loading = false
 
     var body: some View {
@@ -64,14 +66,23 @@ struct ChangesetDiffPane: View {
             }
             .frame(maxWidth: .infinity, minHeight: 140)
 
-            CommitFileDiffPane(fileDiff: fileDiff)
+            CommitFileDiffPane(fileDiff: fileDiff, imageDiffData: imageDiffData)
                 .frame(maxWidth: .infinity, minHeight: 120)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: ref) { await load() }
         .onChange(of: selectedFile) { _, path in
-            guard let path else { fileDiff = nil; return }
-            Task { fileDiff = await viewModel.commitFileDiff(ref, path: path) }
+            guard let path else { fileDiff = nil; imageDiffData = nil; return }
+            Task {
+                let diff = await viewModel.commitFileDiff(ref, path: path)
+                fileDiff = diff
+                if let diff {
+                    imageDiffData = await viewModel.commitImageDiffData(
+                        sha: ref, parentSHA: parentSHA, diff: diff)
+                } else {
+                    imageDiffData = nil
+                }
+            }
         }
     }
 
@@ -122,13 +133,14 @@ struct ChangesetDiffPane: View {
 /// Concrete (not an inline if/else) so selecting a changed file doesn't reset the dragged divider.
 private struct CommitFileDiffPane: View {
     let fileDiff: FileDiff?
+    var imageDiffData: ImageDiffData? = nil
 
     var body: some View {
         // GeometryReader so the pane keeps a constant (greedy) size whether the diff or the
         // placeholder is shown — otherwise VSplitView shifts the divider on file selection.
         GeometryReader { _ in
             if let fileDiff {
-                DiffView(diff: fileDiff)
+                DiffView(diff: fileDiff, imageDiffData: imageDiffData)
             } else {
                 ContentUnavailableView("No File Selected", systemImage: "doc.text.magnifyingglass",
                                        description: Text("Select a changed file to view its diff."))

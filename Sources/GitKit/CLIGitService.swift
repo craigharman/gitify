@@ -461,6 +461,12 @@ public struct CLIGitService: GitService {
         try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
     }
 
+    public func fileData(at path: String, revision: String) async throws -> Data {
+        try Self.requireSafe(path, "path")
+        if !revision.isEmpty { try Self.requireSafe(revision, "revision") }
+        return try await runner.run(["show", "\(revision):\(path)"])
+    }
+
     public func resolveFile(path: String, contents: String) async throws {
         try Self.requireSafe(path, "path")
         try contents.write(to: root.appendingPathComponent(path), atomically: true, encoding: .utf8)

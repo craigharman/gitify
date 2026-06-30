@@ -224,6 +224,7 @@ private struct DiffPane: View {
         GeometryReader { _ in
             if let diff = viewModel.currentDiff {
                 DiffView(diff: diff,
+                         imageDiffData: viewModel.imageDiffData,
                          actionLabel: viewModel.selectedStaged ? "Unstage Hunk" : "Stage Hunk",
                          lineActionLabel: viewModel.selectedStaged ? "Unstage Lines" : "Stage Lines",
                          onApplyHunk: { hunk in Task { await viewModel.applyHunk(hunk) } },

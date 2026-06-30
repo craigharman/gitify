@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/craigharman/gitify/compare/v1.13.0...v1.13.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* read changelog file causing app to crash ([#34](https://github.com/craigharman/gitify/issues/34)) ([380e11f](https://github.com/craigharman/gitify/commit/380e11fafbb27572ec6a5e8f1e23b036935452f5))
+
 ## [1.13.0](https://github.com/craigharman/gitify/compare/v1.12.0...v1.13.0) (2026-06-30)
 
 

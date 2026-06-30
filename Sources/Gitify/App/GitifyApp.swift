@@ -45,20 +45,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (e.g. `swift run`), where Info.plist's CFBundleIconFile doesn't apply.
         // Inside a .app bundle the icon is already set via Info.plist's CFBundleIconFile,
         // so we only attempt this when the SwiftPM resource bundle is available.
-        if let url = resourceBundle?.url(forResource: "AppIcon", withExtension: "icns"),
+        if let url = Bundle.safeModule?.url(forResource: "AppIcon", withExtension: "icns"),
            let image = NSImage(contentsOf: url) {
             NSApplication.shared.applicationIconImage = image
         }
     }
+}
 
-    /// Returns the SwiftPM resource bundle if it exists, or nil.
-    /// `Bundle.module` calls fatalError when the bundle is missing, so we
+extension Bundle {
+    /// Returns the SwiftPM resource bundle if it exists, or `nil`.
+    /// `Bundle.module` calls `fatalError` when the bundle is missing, so we
     /// replicate its lookup logic without the fatal trap.
-    private var resourceBundle: Bundle? {
+    static var safeModule: Bundle? {
         let bundleName = "Gitify_Gitify"
         let candidates = [
             Bundle.main.resourceURL,
-            Bundle(for: AppDelegate.self).resourceURL,
+            Bundle.main.bundleURL,
         ]
         for candidate in candidates {
             if let url = candidate?.appendingPathComponent(bundleName + ".bundle"),

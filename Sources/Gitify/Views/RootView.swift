@@ -56,7 +56,8 @@ struct RootView: View {
         .task {
             let version = currentAppVersion
             guard version != AppDefaults.lastSeenVersion else { return }
-            guard let url = Bundle.module.url(forResource: "CHANGELOG", withExtension: "md"),
+            guard let bundle = Bundle.safeModule,
+                  let url = bundle.url(forResource: "CHANGELOG", withExtension: "md"),
                   let text = try? String(contentsOf: url, encoding: .utf8) else { return }
             let entries = ChangelogParser.parse(text)
             guard !entries.isEmpty else { return }

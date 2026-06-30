@@ -9,6 +9,9 @@ CONFIG="${1:-release}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${ROOT}/build/Gitify.app"
 
+# Keep the bundled changelog in sync with the repo root copy.
+cp "${ROOT}/CHANGELOG.md" "${ROOT}/Sources/Gitify/Resources/CHANGELOG.md"
+
 echo "==> Building Gitify (${CONFIG})"
 swift build --product Gitify -c "${CONFIG}"
 

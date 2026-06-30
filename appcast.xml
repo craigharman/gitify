@@ -96,5 +96,18 @@
       length="7010404"
     />
   </item>
+      <item>
+    <title>Version 1.13.1</title>
+    <pubDate>Tue, 30 Jun 2026 06:57:57 +0000</pubDate>
+    <sparkle:version>1.13.1</sparkle:version>
+    <sparkle:shortVersionString>1.13.1</sparkle:shortVersionString>
+    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+    <enclosure
+      url="https://github.com/craigharman/gitify/releases/download/v1.13.1/Gitify-1.13.1.dmg"
+      type="application/octet-stream"
+      sparkle:edSignature="fD2dQq6iUqbaLRTv9KHzChyw26qrjG9sX5KORG6RcIw7eAiCDDZ4Sayf30fNWTyPGuZzbxqlDNkSTRSbA2OXBQ=="
+      length="7009906"
+    />
+  </item>
   </channel>
 </rss>

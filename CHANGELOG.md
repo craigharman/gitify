@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/craigharman/gitify/compare/v1.11.0...v1.12.0) (2026-06-30)
+
+
+### Features
+
+* add image diff viewer ([#30](https://github.com/craigharman/gitify/issues/30)) ([a3129f4](https://github.com/craigharman/gitify/commit/a3129f4378918bc1dcd06f9aaa7b094518db1bde))
+
 ## [1.11.0](https://github.com/craigharman/gitify/compare/v1.10.0...v1.11.0) (2026-06-27)
 
 

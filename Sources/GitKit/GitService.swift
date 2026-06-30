@@ -234,6 +234,10 @@ public protocol GitService: Sendable {
     /// The working-tree contents of `path` (including any conflict markers).
     func fileContents(path: String) async -> String?
 
+    /// Raw file content at `revision` (e.g. `"HEAD"`, a SHA, or `""` for the index).
+    /// Used for binary file previews such as image diffs.
+    func fileData(at path: String, revision: String) async throws -> Data
+
     /// Writes `contents` to `path` and stages it (marking a conflict resolved).
     func resolveFile(path: String, contents: String) async throws
 }

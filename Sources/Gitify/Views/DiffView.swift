@@ -9,6 +9,7 @@ private struct LineRef: Hashable { let hunk: Int; let index: Int }
 /// `onApplyLines` is provided, individual added/removed lines can be selected and staged.
 struct DiffView: View {
     let diff: FileDiff
+    var imageDiffData: ImageDiffData? = nil
     var actionLabel: String = "Stage Hunk"
     var lineActionLabel: String = "Stage Lines"
     var onApplyHunk: ((DiffHunk) -> Void)? = nil
@@ -21,9 +22,11 @@ struct DiffView: View {
     private var language: String { (diff.path as NSString).pathExtension.lowercased() }
 
     var body: some View {
-        if diff.isBinary {
+        if diff.isBinary, let imageDiffData {
+            ImageDiffView(data: imageDiffData, isNew: diff.isNew, isDeleted: diff.isDeleted)
+        } else if diff.isBinary {
             ContentUnavailableView("Binary File", systemImage: "doc.badge.gearshape",
-                                   description: Text("Binary content can't be displayed."))
+                                   description: Text("Binary content can\u{2019}t be displayed."))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if diff.hunks.isEmpty {
             ContentUnavailableView("No Changes", systemImage: "doc.plaintext",

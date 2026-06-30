@@ -42,6 +42,7 @@ final class RepositoryViewModel {
     var selectedPath: String?
     private(set) var selectedStaged = false
     private(set) var currentDiff: FileDiff?
+    private(set) var imageDiffData: ImageDiffData?
     var commitMessage: String = ""
     var amendMode: Bool = false
     private(set) var isCommitting = false
@@ -132,7 +133,28 @@ final class RepositoryViewModel {
 
     private func loadDiff(path: String, staged: Bool) async {
         guard let service else { return }
-        currentDiff = (try? await service.diff(path: path, staged: staged)) ?? .empty(path: path)
+        let diff = (try? await service.diff(path: path, staged: staged)) ?? .empty(path: path)
+        currentDiff = diff
+        if diff.isBinary && diff.isImage {
+            imageDiffData = await loadImageDiffData(diff: diff, staged: staged)
+        } else {
+            imageDiffData = nil
+        }
+    }
+
+    private func loadImageDiffData(diff: FileDiff, staged: Bool) async -> ImageDiffData {
+        guard let service else { return ImageDiffData(oldImage: nil, newImage: nil) }
+        let oldPath = diff.oldPath ?? diff.path
+        let oldImage: Data? = diff.isNew ? nil : (try? await service.fileData(at: oldPath, revision: "HEAD"))
+        let newImage: Data?
+        if diff.isDeleted {
+            newImage = nil
+        } else if staged {
+            newImage = try? await service.fileData(at: diff.path, revision: "")
+        } else {
+            newImage = try? Data(contentsOf: service.root.appendingPathComponent(diff.path))
+        }
+        return ImageDiffData(oldImage: oldImage, newImage: newImage)
     }
 
     /// Stages or unstages a single hunk of the currently-displayed diff. The direction is
@@ -280,6 +302,7 @@ final class RepositoryViewModel {
             } else {
                 selectedPath = nil
                 currentDiff = nil
+                imageDiffData = nil
             }
         }
         // Refresh history so amend/commit changes are reflected.
@@ -511,6 +534,18 @@ final class RepositoryViewModel {
         return try? await service.commitFileDiff(sha: sha, path: path)
     }
 
+    func commitImageDiffData(sha: String, parentSHA: String?, diff: FileDiff) async -> ImageDiffData? {
+        guard let service, diff.isBinary, diff.isImage else { return nil }
+        let oldPath = diff.oldPath ?? diff.path
+        let oldImage: Data? = if let parentSHA, !diff.isNew {
+            try? await service.fileData(at: oldPath, revision: parentSHA)
+        } else {
+            nil
+        }
+        let newImage: Data? = diff.isDeleted ? nil : (try? await service.fileData(at: diff.path, revision: sha))
+        return ImageDiffData(oldImage: oldImage, newImage: newImage)
+    }
+
     func merge(branch: String, squash: Bool, noFastForward: Bool, noCommit: Bool, skipHooks: Bool) async {
         await runIntegration("Merge") {
             try await $0.merge(branch: branch, squash: squash, noFastForward: noFastForward,
@@ -650,6 +685,7 @@ final class RepositoryViewModel {
         } else {
             selectedPath = nil
             currentDiff = nil
+            imageDiffData = nil
         }
     }
 }

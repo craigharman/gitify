@@ -7,7 +7,12 @@ struct ImageDiffView: View {
     let isNew: Bool
     let isDeleted: Bool
 
-    private enum Mode: String, CaseIterable { case sideBySide = "Side by Side", swipe = "Swipe" }
+    private enum Mode: String, CaseIterable {
+        case sideBySide = "Side by Side"
+        case swipe = "Swipe"
+        case before = "Before"
+        case after = "After"
+    }
     @State private var mode: Mode = .sideBySide
     @State private var scrubberFraction: CGFloat = 0.5
 
@@ -21,9 +26,16 @@ struct ImageDiffView: View {
             if hasBothImages {
                 header
             }
-            if mode == .swipe && hasBothImages {
+            switch mode {
+            case .swipe where hasBothImages:
                 swipeBody
-            } else {
+            case .before:
+                singlePanel(label: "Before", imageData: data.oldImage,
+                            placeholder: isNew ? "New File" : nil)
+            case .after:
+                singlePanel(label: "After", imageData: data.newImage,
+                            placeholder: isDeleted ? "Deleted" : nil)
+            default:
                 sideBySideBody
             }
         }
@@ -123,6 +135,12 @@ struct ImageDiffView: View {
             Spacer()
             imageMetadata(nsImage, data: data)
         }
+    }
+
+    // MARK: - Single Image (Before / After)
+
+    private func singlePanel(label: String, imageData: Data?, placeholder: String?) -> some View {
+        panel(label: label, imageData: imageData, placeholder: placeholder, sharedSize: nil)
     }
 
     // MARK: - Swipe / Scrubber

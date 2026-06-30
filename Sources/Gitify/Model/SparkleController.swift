@@ -13,11 +13,20 @@ final class SparkleController {
     private(set) var canCheckForUpdates = false
 
     init() {
+        let startUpdater: Bool
+        #if DEBUG
+        startUpdater = false
+        #else
+        startUpdater = true
+        #endif
+
         updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: startUpdater,
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+
+        guard startUpdater else { return }
 
         observation = updaterController.updater.observe(
             \.canCheckForUpdates,

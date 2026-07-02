@@ -24,6 +24,7 @@ struct RepositoryWorkspaceView: View {
     @State private var section: WorkspaceSection
     @State private var integrationSheet: IntegrationSheet?
     @State private var showSettings = false
+    @State private var showAssistant = false
 
     // Per-repository key for the last-selected section.
     private var sectionKey: String { SidebarDefaults.sectionKey(ref.path) }
@@ -114,6 +115,11 @@ struct RepositoryWorkspaceView: View {
                 branchMenu
                 moreMenu
 
+                Button { showAssistant = true } label: {
+                    Label("AI Assistant", systemImage: "sparkles")
+                }
+                .help("AI Assistant")
+
                 Button { Task { await viewModel.load() } } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -127,6 +133,7 @@ struct RepositoryWorkspaceView: View {
             }
         }
         .sheet(isPresented: $showSettings) { SettingsSheet(viewModel: viewModel) }
+        .sheet(isPresented: $showAssistant) { AIAssistantView(viewModel: viewModel) }
         .task { await viewModel.load() }
         .overlay {
             if viewModel.isBusy {

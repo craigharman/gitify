@@ -1,8 +1,20 @@
 import SwiftUI
 
-/// App-level preferences pane (Cmd+,). Provides pickers for the default terminal and editor
-/// applications, populated from installed apps on the system.
+/// App-level preferences pane (Cmd+,). Provides tabs for General settings and AI configuration.
 struct AppSettingsView: View {
+    var body: some View {
+        TabView {
+            GeneralSettingsTab()
+                .tabItem { Label("General", systemImage: "gearshape") }
+            AISettingsTab()
+                .tabItem { Label("AI", systemImage: "sparkles") }
+        }
+        .frame(width: 420)
+    }
+}
+
+/// General settings tab: default terminal and editor pickers.
+private struct GeneralSettingsTab: View {
     @State private var terminalID: String = AppDefaults.terminalBundleID
     @State private var editorID: String = AppDefaults.editorBundleID ?? ""
 

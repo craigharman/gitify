@@ -53,6 +53,9 @@ final class RepositoryViewModel {
     private var pendingMergeSourceToDelete: String?
 
     private var service: CLIGitService?
+
+    /// Exposes the resolved git service for use by the AI tool executor.
+    var gitService: (any GitService)? { service }
     private var nextSkip: Int? = 0
     private var watcher: (any RepositoryWatching)?
     private var autoRefreshTask: Task<Void, Never>?

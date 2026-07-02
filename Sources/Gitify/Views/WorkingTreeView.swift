@@ -542,11 +542,16 @@ private struct CommitBox: View {
     @Bindable var viewModel: RepositoryViewModel
     @FocusState private var editorFocused: Bool
     @State private var commitAndPush: Bool
+    @State private var isGeneratingMessage = false
 
     init(viewModel: RepositoryViewModel) {
         self.viewModel = viewModel
         let key = SidebarDefaults.commitAndPushKey(viewModel.ref.path)
         _commitAndPush = State(initialValue: UserDefaults.standard.bool(forKey: key))
+    }
+
+    private var hasAIKey: Bool {
+        AIDefaults.apiKey(for: AIDefaults.provider) != nil
     }
 
     private var primaryLabel: String {
@@ -572,6 +577,40 @@ private struct CommitBox: View {
                     .focused($editorFocused)
                     .font(.body)
                     .scrollContentBackground(.hidden)
+                if hasAIKey {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            if isGeneratingMessage {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .padding(4)
+                            } else {
+                                Button {
+                                    Task {
+                                        isGeneratingMessage = true
+                                        defer { isGeneratingMessage = false }
+                                        do {
+                                            let message = try await AICommitMessageGenerator.generate(viewModel: viewModel)
+                                            viewModel.commitMessage = message
+                                        } catch {
+                                            // Silently ignore — the user can write manually.
+                                        }
+                                    }
+                                } label: {
+                                    Image(systemName: "sparkles")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Generate commit message with AI")
+                                .disabled(viewModel.status?.stagedFiles.isEmpty != false)
+                                .padding(4)
+                            }
+                        }
+                        Spacer()
+                    }
+                }
             }
             .padding(8) // inner padding so text/cursor isn't against the border
             .frame(height: 88)

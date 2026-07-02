@@ -1,12 +1,12 @@
 import Foundation
 import Security
 
-/// Minimal Keychain wrapper for storing hosting-provider access tokens.
+/// Minimal Keychain wrapper for storing secrets (hosting tokens, AI API keys, etc.).
 enum Keychain {
-    private static let service = "com.gitify.accounts"
+    private static let defaultService = "com.gitify.accounts"
 
-    static func set(_ token: String, account: String) {
-        delete(account: account)
+    static func set(_ token: String, account: String, service: String = "com.gitify.accounts") {
+        delete(account: account, service: service)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -16,7 +16,7 @@ enum Keychain {
         SecItemAdd(query as CFDictionary, nil)
     }
 
-    static func get(account: String) -> String? {
+    static func get(account: String, service: String = "com.gitify.accounts") -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -30,7 +30,7 @@ enum Keychain {
         return String(decoding: data, as: UTF8.self)
     }
 
-    static func delete(account: String) {
+    static func delete(account: String, service: String = "com.gitify.accounts") {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

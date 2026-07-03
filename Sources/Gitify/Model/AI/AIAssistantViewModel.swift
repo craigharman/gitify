@@ -75,7 +75,10 @@ final class AIAssistantViewModel {
             return
         }
 
-        let model = AIDefaults.model
+        guard let model = AIDefaults.model else {
+            error = "No model selected. Open Settings \u{2192} AI to choose one."
+            return
+        }
         let systemPrompt = buildSystemPrompt()
         let tools = AIToolDefinitions.all
 

@@ -543,6 +543,7 @@ private struct CommitBox: View {
     @FocusState private var editorFocused: Bool
     @State private var commitAndPush: Bool
     @State private var isGeneratingMessage = false
+    @AppStorage("ai.hidden") private var hideAIFeatures = false
 
     init(viewModel: RepositoryViewModel) {
         self.viewModel = viewModel
@@ -550,8 +551,8 @@ private struct CommitBox: View {
         _commitAndPush = State(initialValue: UserDefaults.standard.bool(forKey: key))
     }
 
-    private var hasAIKey: Bool {
-        AIDefaults.apiKey(for: AIDefaults.provider) != nil
+    private var showAIButton: Bool {
+        !hideAIFeatures && AIDefaults.hasAPIKey
     }
 
     private var primaryLabel: String {
@@ -577,7 +578,7 @@ private struct CommitBox: View {
                     .focused($editorFocused)
                     .font(.body)
                     .scrollContentBackground(.hidden)
-                if hasAIKey {
+                if showAIButton {
                     VStack {
                         HStack {
                             Spacer()

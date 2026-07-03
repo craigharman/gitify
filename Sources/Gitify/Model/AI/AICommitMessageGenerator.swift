@@ -41,7 +41,9 @@ enum AICommitMessageGenerator {
         """
 
         let messages: [AIMessage] = [.user(diffText)]
-        let model = AIDefaults.model
+        guard let model = AIDefaults.model else {
+            throw AIClientError(message: "No model selected.")
+        }
 
         let stream = client.stream(
             messages: messages,

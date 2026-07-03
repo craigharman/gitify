@@ -15,15 +15,11 @@ struct AIAssistantView: View {
             HStack {
                 Text("AI Assistant").font(.headline)
                 Spacer()
-                Picker("Model", selection: Binding(
-                    get: { AIDefaults.modelID },
-                    set: { AIDefaults.modelID = $0 }
-                )) {
-                    ForEach(AIDefaults.provider.models) { model in
-                        Text(model.displayName).tag(model.id)
-                    }
+                if let model = AIDefaults.model {
+                    Text(model.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .fixedSize()
                 Button { assistant.clear() } label: {
                     Image(systemName: "trash")
                 }

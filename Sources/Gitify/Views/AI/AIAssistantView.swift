@@ -38,6 +38,14 @@ struct AIAssistantView: View {
             // Messages
             ScrollViewReader { proxy in
                 ScrollView {
+                    if assistant.messages.isEmpty {
+                        Text("Ask me about this repository. I can help with any Git related tasks such as merges, cherry pick, commits etc.")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(40)
+                    }
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(assistant.messages) { message in
                             MessageBubble(message: message)

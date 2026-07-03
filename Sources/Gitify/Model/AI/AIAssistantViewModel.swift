@@ -89,10 +89,9 @@ final class AIAssistantViewModel {
 
         // Loop: stream a response, execute any tool calls, re-send with results.
         while toolRounds < Self.maxToolRounds {
-            // Add a placeholder assistant message for streaming text into.
-            let assistantIndex = messages.count
-            messages.append(ChatMessage(role: .assistant, text: ""))
-
+            // The assistant message is created lazily on the first text delta,
+            // so tool-only responses don't leave an empty bubble.
+            var assistantIndex: Int?
             var accumulatedText = ""
             var pendingToolCalls: [AIToolCall] = []
 
@@ -109,7 +108,12 @@ final class AIAssistantViewModel {
                     switch event {
                     case .textDelta(let delta):
                         accumulatedText += delta
-                        messages[assistantIndex].text = accumulatedText
+                        if let idx = assistantIndex {
+                            messages[idx].text = accumulatedText
+                        } else {
+                            assistantIndex = messages.count
+                            messages.append(ChatMessage(role: .assistant, text: accumulatedText))
+                        }
                     case .toolCall(let call):
                         pendingToolCalls.append(call)
                     case .done:
@@ -119,10 +123,6 @@ final class AIAssistantViewModel {
             } catch {
                 if !Task.isCancelled {
                     self.error = error.localizedDescription
-                    // Remove empty assistant message if nothing was streamed.
-                    if accumulatedText.isEmpty {
-                        messages.remove(at: assistantIndex)
-                    }
                 }
                 return
             }

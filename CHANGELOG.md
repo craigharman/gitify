@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/craigharman/gitify/compare/v1.13.1...v1.14.0) (2026-07-03)
+
+
+### Features
+
+* add (optional) ai assistant ([#36](https://github.com/craigharman/gitify/issues/36)) ([225e2d1](https://github.com/craigharman/gitify/commit/225e2d13f620547cff3fe997ff9f9b2d544ab102))
+
 ## [1.13.1](https://github.com/craigharman/gitify/compare/v1.13.0...v1.13.1) (2026-06-30)
 
 

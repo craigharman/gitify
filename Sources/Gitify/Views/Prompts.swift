@@ -19,7 +19,22 @@ enum Prompt {
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
 
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let response = alert.runModal()
+
+        // Unhook the accessory field from the alert window's key view loop before
+        // teardown. `initialFirstResponder` and `nextKeyView` are unretained (assign)
+        // references, and the alert's internal accessory hosting view is destroyed
+        // lazily via autorelease -- if the loop still points at the freed field when
+        // that happens, `-[NSView _removeFromKeyViewLoop]` crashes on a dangling
+        // pointer (EXC_BAD_ACCESS in objc_msgSend).
+        alert.window.makeFirstResponder(nil)
+        alert.window.initialFirstResponder = nil
+        field.nextKeyView = nil
+        alert.accessoryView = nil
+        field.removeFromSuperview()
+        alert.window.recalculateKeyViewLoop()
+
+        guard response == .alertFirstButtonReturn else { return nil }
         let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.isEmpty { return allowEmpty ? "" : nil }
         return value

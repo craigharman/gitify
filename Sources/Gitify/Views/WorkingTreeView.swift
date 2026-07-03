@@ -542,11 +542,18 @@ private struct CommitBox: View {
     @Bindable var viewModel: RepositoryViewModel
     @FocusState private var editorFocused: Bool
     @State private var commitAndPush: Bool
+    @State private var isGeneratingMessage = false
+    @State private var showStagingHint = false
+    @AppStorage("ai.hidden") private var hideAIFeatures = false
 
     init(viewModel: RepositoryViewModel) {
         self.viewModel = viewModel
         let key = SidebarDefaults.commitAndPushKey(viewModel.ref.path)
         _commitAndPush = State(initialValue: UserDefaults.standard.bool(forKey: key))
+    }
+
+    private var showAIButton: Bool {
+        !hideAIFeatures && AIDefaults.hasAPIKey
     }
 
     private var primaryLabel: String {
@@ -577,6 +584,29 @@ private struct CommitBox: View {
             .frame(height: 88)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+            .overlay(alignment: .topTrailing) {
+                if showAIButton {
+                    if isGeneratingMessage {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding(8)
+                    } else {
+                        GenerateMessageButton(
+                            viewModel: viewModel,
+                            isGenerating: $isGeneratingMessage,
+                            showStagingHint: $showStagingHint
+                        )
+                        .padding(4)
+                        .popover(isPresented: $showStagingHint, arrowEdge: .bottom) {
+                            Text("Stage your changes before generating a commit message.")
+                                .font(.caption)
+                                .padding(10)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(width: 220)
+                        }
+                    }
+                }
+            }
 
             HStack {
                 Toggle("Amend", isOn: Binding(
@@ -599,5 +629,120 @@ private struct CommitBox: View {
         commitAndPush = value
         let key = SidebarDefaults.commitAndPushKey(viewModel.ref.path)
         UserDefaults.standard.set(value, forKey: key)
+    }
+}
+
+/// An AppKit-level button that displays the sparkles icon for AI commit message generation.
+/// Uses a custom NSView subclass so it receives clicks even when overlaid on a TextEditor
+/// (whose NSTextView swallows mouse events at the AppKit layer, preventing SwiftUI buttons
+/// from working).
+private struct GenerateMessageButton: NSViewRepresentable {
+    let viewModel: RepositoryViewModel
+    @Binding var isGenerating: Bool
+    @Binding var showStagingHint: Bool
+
+    final class ButtonView: NSView {
+        var viewModel: RepositoryViewModel?
+        var setGenerating: ((Bool) -> Void)?
+        var showStagingHint: ((Bool) -> Void)?
+        private let imageView = NSImageView()
+        private var isHovered = false
+
+        override init(frame: NSRect) {
+            super.init(frame: frame)
+            setupImageView()
+            setupTrackingArea()
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) { fatalError() }
+
+        private func setupImageView() {
+            let config = NSImage.SymbolConfiguration(pointSize: 10, weight: .regular)
+            let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "Generate commit message")?
+                .withSymbolConfiguration(config)
+            imageView.image = image
+            imageView.contentTintColor = .secondaryLabelColor
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(imageView)
+            NSLayoutConstraint.activate([
+                imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+                imageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+                widthAnchor.constraint(equalToConstant: 20),
+                heightAnchor.constraint(equalToConstant: 20),
+            ])
+            toolTip = "Generate commit message with AI"
+        }
+
+        private func setupTrackingArea() {
+            let area = NSTrackingArea(
+                rect: .zero,
+                options: [.mouseEnteredAndExited, .activeInActiveApp, .inVisibleRect, .cursorUpdate],
+                owner: self,
+                userInfo: nil
+            )
+            addTrackingArea(area)
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            isHovered = true
+            imageView.contentTintColor = .controlAccentColor
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            isHovered = false
+            imageView.contentTintColor = .secondaryLabelColor
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            NSCursor.arrow.set()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.invalidateCursorRects(for: self)
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let vm = viewModel else { return }
+
+            // If nothing is staged, show a hint instead of generating.
+            if vm.status?.stagedFiles.isEmpty != false {
+                showStagingHint?(true)
+                return
+            }
+
+            let callback = setGenerating
+            callback?(true)
+            Task { @MainActor in
+                do {
+                    let message = try await AICommitMessageGenerator.generate(viewModel: vm)
+                    if !message.isEmpty {
+                        vm.commitMessage = message
+                    }
+                } catch {
+                    print("[Gitify AI] Commit message generation failed: \(error)")
+                }
+                callback?(false)
+            }
+        }
+
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .arrow)
+        }
+    }
+
+    func makeNSView(context: Context) -> ButtonView {
+        let view = ButtonView(frame: .zero)
+        view.viewModel = viewModel
+        view.setGenerating = { isGenerating = $0 }
+        view.showStagingHint = { showStagingHint = $0 }
+        return view
+    }
+
+    func updateNSView(_ view: ButtonView, context: Context) {
+        view.viewModel = viewModel
+        view.setGenerating = { isGenerating = $0 }
+        view.showStagingHint = { showStagingHint = $0 }
     }
 }

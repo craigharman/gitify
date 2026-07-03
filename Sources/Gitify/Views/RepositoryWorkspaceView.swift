@@ -24,6 +24,9 @@ struct RepositoryWorkspaceView: View {
     @State private var section: WorkspaceSection
     @State private var integrationSheet: IntegrationSheet?
     @State private var showSettings = false
+    @State private var showAssistant = false
+    @State private var showAIPopover = false
+    @AppStorage("ai.hidden") private var hideAIFeatures = false
 
     // Per-repository key for the last-selected section.
     private var sectionKey: String { SidebarDefaults.sectionKey(ref.path) }
@@ -114,6 +117,31 @@ struct RepositoryWorkspaceView: View {
                 branchMenu
                 moreMenu
 
+                if !hideAIFeatures {
+                    Button {
+                        if AIDefaults.hasAPIKey {
+                            showAssistant = true
+                        } else {
+                            showAIPopover = true
+                        }
+                    } label: {
+                        Label("AI Assistant", systemImage: "sparkles")
+                    }
+                    .help("AI Assistant")
+                    .popover(isPresented: $showAIPopover) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("AI Assistant")
+                                .font(.headline)
+                            Text("Gitify allows you to use AI to explain your Git requirements in plain English and compose commit messages. To use this feature add an API key via settings.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(16)
+                        .frame(width: 300)
+                    }
+                }
+
                 Button { Task { await viewModel.load() } } label: {
                     Image(systemName: "arrow.clockwise")
                 }
@@ -127,6 +155,7 @@ struct RepositoryWorkspaceView: View {
             }
         }
         .sheet(isPresented: $showSettings) { SettingsSheet(viewModel: viewModel) }
+        .sheet(isPresented: $showAssistant) { AIAssistantView(viewModel: viewModel) }
         .task { await viewModel.load() }
         .overlay {
             if viewModel.isBusy {

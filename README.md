@@ -18,6 +18,7 @@ A fast, lightweight, native macOS Git client built entirely with SwiftUI and App
 - **Reflog and submodule support**
 - **FSEvents auto-refresh** -- your view updates automatically when files change on disk
 - **Check for Updates** -- stay current via the built-in update checker
+- **AI assistant (optional)** -- describe Git tasks in plain English and let an AI carry them out, or generate conventional-commit messages from your staged diff. Supports Anthropic and OpenAI. Requires your own API key; can be hidden entirely via Settings > AI
 
 ## Requirements
 

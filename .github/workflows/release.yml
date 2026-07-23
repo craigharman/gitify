@@ -168,6 +168,9 @@ jobs:
         run: |
           gh release upload "${{ needs.release-please.outputs.tag_name }}" \
             "build/Gitify-${{ needs.release-please.outputs.version }}.dmg"
+          cp "build/Gitify-${{ needs.release-please.outputs.version }}.dmg" build/Gitify.dmg
+          gh release upload "${{ needs.release-please.outputs.tag_name }}" \
+            build/Gitify.dmg
 
       - name: Commit updated appcast.xml
         if: env.ED_SIGNATURE != ''

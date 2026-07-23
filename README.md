@@ -29,11 +29,6 @@ A fast, lightweight, native macOS Git client built entirely with SwiftUI and App
 1. Go to the [Releases](https://github.com/craigharman/gitify/releases) page
 2. Download the latest `.dmg` file
 3. Open the `.dmg` and drag **Gitify.app** into your Applications folder
-4. On first launch, macOS will block the app because it is not signed with an Apple Developer ID. To allow it:
-   - Open **System Settings** > **Privacy & Security**
-   - Scroll down to the **Security** section
-   - You will see a message that "Gitify" was blocked -- click **Open Anyway**
-   - Confirm in the dialog that appears
 
 ## Building from source
 

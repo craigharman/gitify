@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>Gitify</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.gitify.app</string>
+	<string>com.craigharman.gitify</string>
 	<key>CFBundleVersion</key>
 	<string>1.1.0</string>
 	<key>CFBundleShortVersionString</key>

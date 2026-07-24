@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/craigharman/gitify/compare/v1.14.0...v1.15.0) (2026-07-24)
+
+
+### Features
+
+* Gitify is now notarised by Apple ([#38](https://github.com/craigharman/gitify/issues/38)) ([7d7755b](https://github.com/craigharman/gitify/commit/7d7755bfdfa637703020b1653e0d8a1e2883e2de))
+
 ## [1.14.0](https://github.com/craigharman/gitify/compare/v1.13.1...v1.14.0) (2026-07-03)
 
 

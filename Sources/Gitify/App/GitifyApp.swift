@@ -6,17 +6,28 @@ struct GitifyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = AppModel()
     @State private var sparkleController = SparkleController()
+    @AppStorage("appearance.mode") private var appearanceMode: String = "system"
+
+    private var colorScheme: ColorScheme? {
+        switch appearanceMode {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(model)
                 .frame(minWidth: 900, minHeight: 560)
+                .preferredColorScheme(colorScheme)
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         Settings {
             AppSettingsView()
+                .preferredColorScheme(colorScheme)
         }
         .commands {
             CommandGroup(after: .appInfo) {

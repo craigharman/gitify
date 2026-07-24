@@ -3,6 +3,20 @@ import AppKit
 /// App-level preferences stored in UserDefaults.
 enum AppDefaults {
 
+    // MARK: - Appearance
+
+    /// The user\u{2019}s preferred appearance mode.
+    enum AppearanceMode: String, CaseIterable {
+        case system, light, dark
+    }
+
+    private static let appearanceKey = "appearance.mode"
+
+    static var appearanceMode: AppearanceMode {
+        get { UserDefaults.standard.string(forKey: appearanceKey).flatMap(AppearanceMode.init(rawValue:)) ?? .system }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: appearanceKey) }
+    }
+
     // MARK: - Keys
 
     private static let terminalKey = "defaultTerminalBundleID"

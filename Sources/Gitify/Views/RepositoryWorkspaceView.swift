@@ -44,6 +44,7 @@ struct RepositoryWorkspaceView: View {
         NavigationSplitView {
             WorkspaceRail(viewModel: viewModel, section: $section, integrationSheet: $integrationSheet)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
+                .layoutPriority(1)
         } detail: {
             VStack(spacing: 0) {
                 if let operation = viewModel.operation {

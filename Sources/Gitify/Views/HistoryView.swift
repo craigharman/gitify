@@ -30,8 +30,9 @@ struct HistoryView: View {
                 }
             }
             .frame(minWidth: 380, idealWidth: 480, maxHeight: .infinity)
+            .layoutPriority(1)
             CommitDetailPane(selection: selection, viewModel: viewModel)
-                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

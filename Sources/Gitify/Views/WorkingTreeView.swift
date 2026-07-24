@@ -41,9 +41,10 @@ struct WorkingTreeView: View {
                         CommitBox(viewModel: viewModel)
                     }
                     .frame(minWidth: 300, idealWidth: 360, maxHeight: .infinity)
+                    .layoutPriority(1)
 
                     DiffPane(viewModel: viewModel)
-                        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onChange(of: viewModel.selectedPath) { _, path in

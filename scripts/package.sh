@@ -46,8 +46,19 @@ fi
 if [[ -n "${SIGN_IDENTITY:-}" && -n "${NOTARY_PROFILE:-}" ]]; then
   echo "==> Submitting to Apple notary service (this can take a few minutes)"
   xcrun notarytool submit "${DMG}" --keychain-profile "${NOTARY_PROFILE}" --wait
-  echo "==> Stapling notarization ticket"
-  xcrun stapler staple "${DMG}"
+  echo "==> Stapling notarization ticket (retrying up to 5 times for propagation delay)"
+  STAPLE_ATTEMPT=0
+  STAPLE_MAX=5
+  STAPLE_DELAY=30
+  until xcrun stapler staple "${DMG}" 2>/dev/null; do
+    STAPLE_ATTEMPT=$((STAPLE_ATTEMPT + 1))
+    if [[ ${STAPLE_ATTEMPT} -ge ${STAPLE_MAX} ]]; then
+      echo "ERROR: stapler failed after ${STAPLE_MAX} attempts" >&2
+      exit 1
+    fi
+    echo "    Staple attempt ${STAPLE_ATTEMPT}/${STAPLE_MAX} failed; retrying in ${STAPLE_DELAY}s..."
+    sleep "${STAPLE_DELAY}"
+  done
   xcrun stapler validate "${DMG}"
 else
   echo "==> Skipping notarization (needs SIGN_IDENTITY + NOTARY_PROFILE)"

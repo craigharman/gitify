@@ -63,8 +63,17 @@ final class RepositoryViewModel {
     init(ref: RepositoryRef) {
         self.ref = ref
     }
-    // Cleanup is automatic: releasing `watcher` invalidates the FSEvents stream via its
-    // own deinit, and the debounced refresh task holds only a weak self.
+
+    /// Explicitly tears down the file-system watcher and cancels the debounce task. Called
+    /// from the view's `onDisappear` so cleanup happens deterministically before the view
+    /// model is released (relying solely on `deinit` is racy when FSEvents callbacks are
+    /// still in-flight on the watcher's dispatch queue).
+    func tearDown() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = nil
+        watcher?.stop()
+        watcher = nil
+    }
 
     var localBranches: [Ref] { refs.filter { $0.kind == .localBranch } }
     var remoteBranches: [Ref] { refs.filter { $0.kind == .remoteBranch } }

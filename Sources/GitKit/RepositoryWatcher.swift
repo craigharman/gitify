@@ -50,8 +50,10 @@ public final class RepositoryWatcher: RepositoryWatching, @unchecked Sendable {
     }
 
     public func stop() {
-        queue.async { [weak self] in
-            guard let self, let stream = self.stream else { return }
+        // Must run on the stream's dispatch queue so no callback is in-flight when we
+        // invalidate. Uses sync so the caller can safely release the watcher afterward.
+        queue.sync {
+            guard let stream else { return }
             FSEventStreamStop(stream)
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
@@ -60,9 +62,17 @@ public final class RepositoryWatcher: RepositoryWatching, @unchecked Sendable {
     }
 
     deinit {
+        // If stop() was already called, stream is nil and this is a no-op.
+        // Otherwise, schedule cleanup on the stream's queue. We can't use queue.sync
+        // from deinit (risks deadlock), so capture the values and dispatch async.
         guard let stream else { return }
-        FSEventStreamStop(stream)
-        FSEventStreamInvalidate(stream)
-        FSEventStreamRelease(stream)
+        let q = queue
+        // OpaquePointer is not Sendable but FSEventStreamRef is safe to pass across queues.
+        nonisolated(unsafe) let s = stream
+        q.async {
+            FSEventStreamStop(s)
+            FSEventStreamInvalidate(s)
+            FSEventStreamRelease(s)
+        }
     }
 }

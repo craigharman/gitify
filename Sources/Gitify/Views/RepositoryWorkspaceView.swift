@@ -158,6 +158,7 @@ struct RepositoryWorkspaceView: View {
         .sheet(isPresented: $showSettings) { SettingsSheet(viewModel: viewModel) }
         .sheet(isPresented: $showAssistant) { AIAssistantView(viewModel: viewModel) }
         .task { await viewModel.load() }
+        .onDisappear { viewModel.tearDown() }
         .overlay {
             if viewModel.isBusy {
                 OperationOverlay(title: viewModel.operationTitle ?? "Working",

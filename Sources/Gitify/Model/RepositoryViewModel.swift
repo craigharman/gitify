@@ -571,7 +571,9 @@ final class RepositoryViewModel {
     /// deletes the now-merged `source` branch.
     func merge(source: String, into target: String, squash: Bool, noFastForward: Bool,
                noCommit: Bool, skipHooks: Bool, deleteSource: Bool,
-               pushAfterMerge: Bool = false) async {
+               pushAfterMerge: Bool = false,
+               squashCommitMessage: String? = nil,
+               generateSquashMessage: Bool = false) async {
         // Park the deletion intent before attempting the merge so it survives a conflict: a
         // conflicting merge throws below and is finished later by a manual commit, which calls
         // finalizePendingMergeDeletion(). Don't delete when stopping before commit — nothing
@@ -586,6 +588,22 @@ final class RepositoryViewModel {
             try await service.merge(branch: source, squash: squash, noFastForward: noFastForward,
                                     noCommit: noCommit, skipHooks: skipHooks)
             // Reaching here means the merge completed cleanly (a conflicting merge throws above).
+
+            // Auto-commit after a squash merge when the user opted in.
+            if squash, let requestedMessage = squashCommitMessage {
+                var message = requestedMessage
+                if generateSquashMessage {
+                    if let ai = try? await AICommitMessageGenerator.generate(viewModel: self),
+                       !ai.isEmpty {
+                        message = ai
+                    }
+                }
+                if message.isEmpty {
+                    message = "Squash merge branch \u{2018}\(source)\u{2019} into \u{2018}\(target)\u{2019}"
+                }
+                try await service.commit(message: message, amend: false)
+            }
+
             await self.finalizePendingMergeDeletion()
         }
         // If the merge didn't leave a conflicted merge in progress (it finalized cleanly above,

@@ -49,7 +49,7 @@ struct SplitDiffView: View {
             // separator keeps rows from stretching.
             let column = max((geo.size.width - 1) / 2, 80)
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
                         HStack(spacing: 0) {
                             side(row.left, isOld: true, width: column)

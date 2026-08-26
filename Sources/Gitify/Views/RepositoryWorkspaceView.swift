@@ -44,6 +44,7 @@ struct RepositoryWorkspaceView: View {
         NavigationSplitView {
             WorkspaceRail(viewModel: viewModel, section: $section, integrationSheet: $integrationSheet)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 300)
+                .layoutPriority(1)
         } detail: {
             VStack(spacing: 0) {
                 if let operation = viewModel.operation {
@@ -115,8 +116,9 @@ struct RepositoryWorkspaceView: View {
                 .help("Push current branch").disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
 
                 branchMenu
-                moreMenu
+            }
 
+            ToolbarItemGroup {
                 if !hideAIFeatures {
                     Button {
                         if AIDefaults.hasAPIKey {
@@ -146,6 +148,9 @@ struct RepositoryWorkspaceView: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .help("Refresh").disabled(viewModel.isLoading)
+
+                openInMenu
+                moreMenu
             }
         }
         .sheet(item: $integrationSheet) { sheet in
@@ -157,12 +162,42 @@ struct RepositoryWorkspaceView: View {
         .sheet(isPresented: $showSettings) { SettingsSheet(viewModel: viewModel) }
         .sheet(isPresented: $showAssistant) { AIAssistantView(viewModel: viewModel) }
         .task { await viewModel.load() }
+        .onDisappear { viewModel.tearDown() }
         .overlay {
             if viewModel.isBusy {
                 OperationOverlay(title: viewModel.operationTitle ?? "Working",
                                  detail: viewModel.operationProgress)
             }
         }
+    }
+
+    /// Toolbar "Open in…" menu: launch the repository in an installed editor.
+    @ViewBuilder
+    private var openInMenu: some View {
+        let editors = AppDefaults.installedEditors
+        Menu {
+            if editors.isEmpty {
+                Text("No supported editors found")
+            } else {
+                ForEach(editors) { editor in
+                    Button { viewModel.openProject(in: editor) } label: {
+                        if let icon = editor.icon {
+                            Label {
+                                Text(editor.name)
+                            } icon: {
+                                Image(nsImage: icon)
+                            }
+                        } else {
+                            Text(editor.name)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label("Open in…", systemImage: "square.and.arrow.up")
+        }
+        .help("Open repository in an editor")
+        .disabled(editors.isEmpty)
     }
 
     /// Toolbar "Branch" menu: checkout, new branch, merge, rebase.

@@ -1,5 +1,7 @@
 # Gitify
 
+**Website: [gitify.mrmasonic.com](https://gitify.mrmasonic.com)**
+
 A fast, lightweight, native macOS Git client built entirely with SwiftUI and AppKit. No Electron, no embedded runtimes -- just a clean, responsive app that wraps your installed `git` binary so every operation matches your exact git config.
 
 ![Gitify screenshot](docs/screenshot.png)

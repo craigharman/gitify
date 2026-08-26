@@ -63,8 +63,17 @@ final class RepositoryViewModel {
     init(ref: RepositoryRef) {
         self.ref = ref
     }
-    // Cleanup is automatic: releasing `watcher` invalidates the FSEvents stream via its
-    // own deinit, and the debounced refresh task holds only a weak self.
+
+    /// Explicitly tears down the file-system watcher and cancels the debounce task. Called
+    /// from the view's `onDisappear` so cleanup happens deterministically before the view
+    /// model is released (relying solely on `deinit` is racy when FSEvents callbacks are
+    /// still in-flight on the watcher's dispatch queue).
+    func tearDown() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = nil
+        watcher?.stop()
+        watcher = nil
+    }
 
     var localBranches: [Ref] { refs.filter { $0.kind == .localBranch } }
     var remoteBranches: [Ref] { refs.filter { $0.kind == .remoteBranch } }
@@ -226,6 +235,15 @@ final class RepositoryViewModel {
         } else {
             for url in urls { NSWorkspace.shared.open(url) }
         }
+    }
+
+    func openProject(in app: AppDefaults.KnownApp) {
+        guard let appURL = AppDefaults.appURL(for: app.bundleID) else { return }
+        NSWorkspace.shared.open(
+            [ref.url],
+            withApplicationAt: appURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        )
     }
 
     func openInTerminal(_ file: FileStatus) {
@@ -562,7 +580,9 @@ final class RepositoryViewModel {
     /// deletes the now-merged `source` branch.
     func merge(source: String, into target: String, squash: Bool, noFastForward: Bool,
                noCommit: Bool, skipHooks: Bool, deleteSource: Bool,
-               pushAfterMerge: Bool = false) async {
+               pushAfterMerge: Bool = false,
+               squashCommitMessage: String? = nil,
+               generateSquashMessage: Bool = false) async {
         // Park the deletion intent before attempting the merge so it survives a conflict: a
         // conflicting merge throws below and is finished later by a manual commit, which calls
         // finalizePendingMergeDeletion(). Don't delete when stopping before commit — nothing
@@ -577,6 +597,22 @@ final class RepositoryViewModel {
             try await service.merge(branch: source, squash: squash, noFastForward: noFastForward,
                                     noCommit: noCommit, skipHooks: skipHooks)
             // Reaching here means the merge completed cleanly (a conflicting merge throws above).
+
+            // Auto-commit after a squash merge when the user opted in.
+            if squash, let requestedMessage = squashCommitMessage {
+                var message = requestedMessage
+                if generateSquashMessage {
+                    if let ai = try? await AICommitMessageGenerator.generate(viewModel: self),
+                       !ai.isEmpty {
+                        message = ai
+                    }
+                }
+                if message.isEmpty {
+                    message = "Squash merge branch \u{2018}\(source)\u{2019} into \u{2018}\(target)\u{2019}"
+                }
+                try await service.commit(message: message, amend: false)
+            }
+
             await self.finalizePendingMergeDeletion()
         }
         // If the merge didn't leave a conflicted merge in progress (it finalized cleanly above,

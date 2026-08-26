@@ -18,11 +18,18 @@ private struct GeneralSettingsTab: View {
     @State private var terminalID: String = AppDefaults.terminalBundleID
     @State private var editorID: String = AppDefaults.editorBundleID ?? ""
 
+    @State private var appearanceMode: AppDefaults.AppearanceMode = AppDefaults.appearanceMode
     @State private var installedTerminals: [AppDefaults.KnownApp] = []
     @State private var installedEditors: [AppDefaults.KnownApp] = []
 
     var body: some View {
         Form {
+            Picker("Appearance", selection: $appearanceMode) {
+                Text("System").tag(AppDefaults.AppearanceMode.system)
+                Text("Light").tag(AppDefaults.AppearanceMode.light)
+                Text("Dark").tag(AppDefaults.AppearanceMode.dark)
+            }
+
             Picker("Terminal", selection: $terminalID) {
                 ForEach(installedTerminals) { app in
                     AppLabel(app: app).tag(app.bundleID)
@@ -39,6 +46,9 @@ private struct GeneralSettingsTab: View {
         .formStyle(.grouped)
         .frame(width: 400)
         .fixedSize(horizontal: false, vertical: true)
+        .onChange(of: appearanceMode) { _, newValue in
+            AppDefaults.appearanceMode = newValue
+        }
         .onChange(of: terminalID) { _, newValue in
             AppDefaults.terminalBundleID = newValue
         }

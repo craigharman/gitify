@@ -19,6 +19,12 @@ struct MergeSheet: View {
     @State private var preview: MergePreview?
     @State private var loadingPreview = false
 
+    @State private var commitAfterSquash = true
+    @State private var squashMessage = ""
+    @State private var useAIMessage = false
+    @FocusState private var messageEditorFocused: Bool
+    @AppStorage("ai.hidden") private var hideAIFeatures = false
+
     /// Any branch except the target is a valid source (you can't merge a branch into itself).
     private var branches: [String] {
         (viewModel.localBranches.map(\.name) + viewModel.remoteBranches.map(\.name))
@@ -28,6 +34,7 @@ struct MergeSheet: View {
     /// HEAD) is meaningful and no branch switch is needed.
     private var mergesIntoCurrent: Bool { viewModel.currentBranch?.name == target }
     private var sourceIsLocal: Bool { viewModel.localBranches.contains { $0.name == source } }
+    private var showAIButton: Bool { !hideAIFeatures && AIDefaults.hasAPIKey }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -75,6 +82,70 @@ struct MergeSheet: View {
             }
             .padding(.leading, FormMetrics.contentInset) // align checkboxes under the fields
 
+            if squash {
+                VStack(alignment: .leading, spacing: 8) {
+                    option("Commit After Squash",
+                           "Automatically commit the squashed changes with the message below.",
+                           isOn: $commitAfterSquash)
+
+                    if commitAfterSquash {
+                        ZStack(alignment: .topLeading) {
+                            if squashMessage.isEmpty && !messageEditorFocused && !useAIMessage {
+                                Text("Squash commit message")
+                                    .font(.body)
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                            }
+                            if useAIMessage {
+                                Text("AI will generate a commit message after merge")
+                                    .font(.body).italic()
+                                    .foregroundStyle(.secondary)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                            }
+                            TextEditor(text: $squashMessage)
+                                .focused($messageEditorFocused)
+                                .font(.body)
+                                .scrollContentBackground(.hidden)
+                                .disabled(useAIMessage)
+                                .opacity(useAIMessage ? 0 : 1)
+                        }
+                        .padding(8)
+                        .frame(height: 68)
+                        .background(RoundedRectangle(cornerRadius: 6)
+                            .fill(Color(nsColor: .textBackgroundColor)))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                        .overlay(alignment: .topTrailing) {
+                            if showAIButton {
+                                Button {
+                                    useAIMessage.toggle()
+                                    if useAIMessage { squashMessage = "" }
+                                } label: {
+                                    Image(systemName: "sparkles")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(useAIMessage ? Color.accentColor : .secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help(useAIMessage
+                                      ? "Disable AI commit message generation"
+                                      : "Generate commit message with AI after merge")
+                                .padding(6)
+                            }
+                        }
+                        .padding(.leading, 20)
+
+                        if squashMessage.isEmpty && !useAIMessage {
+                            Text("Leave empty for default: \u{201c}Squash merge branch \u{2018}\(source)\u{2019} into \u{2018}\(target)\u{2019}\u{201d}")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.leading, 20)
+                        }
+                    }
+                }
+                .padding(.leading, FormMetrics.contentInset)
+            }
+
             Spacer(minLength: 0)
             HStack {
                 Spacer()
@@ -86,7 +157,11 @@ struct MergeSheet: View {
                                               noFastForward: noFastForward, noCommit: noCommit,
                                               skipHooks: skipHooks,
                                               deleteSource: deleteSource && sourceIsLocal,
-                                              pushAfterMerge: pushAfterMerge && !noCommit)
+                                              pushAfterMerge: pushAfterMerge && !noCommit,
+                                              squashCommitMessage: squash && commitAfterSquash
+                                                  ? squashMessage : nil,
+                                              generateSquashMessage: squash && commitAfterSquash
+                                                  && useAIMessage)
                     }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -94,7 +169,7 @@ struct MergeSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 600, height: 480)
+        .frame(width: 600, height: squash && commitAfterSquash ? 600 : 480)
         .task(id: source) { await loadPreview() }
     }
 

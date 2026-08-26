@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/craigharman/gitify/compare/v1.15.0...v1.16.0) (2026-08-26)
+
+
+### Features
+
+* add open in to toolbar ([#40](https://github.com/craigharman/gitify/issues/40)) ([2484e4a](https://github.com/craigharman/gitify/commit/2484e4acd5deca66f984afc6bc50d1eab3e4012a))
+
 ## [1.15.0](https://github.com/craigharman/gitify/compare/v1.14.0...v1.15.0) (2026-07-24)
 
 

@@ -237,6 +237,15 @@ final class RepositoryViewModel {
         }
     }
 
+    func openProject(in app: AppDefaults.KnownApp) {
+        guard let appURL = AppDefaults.appURL(for: app.bundleID) else { return }
+        NSWorkspace.shared.open(
+            [ref.url],
+            withApplicationAt: appURL,
+            configuration: NSWorkspace.OpenConfiguration()
+        )
+    }
+
     func openInTerminal(_ file: FileStatus) {
         let dir = ref.url.appendingPathComponent(file.path).deletingLastPathComponent()
         let bundleID = AppDefaults.terminalBundleID

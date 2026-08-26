@@ -43,8 +43,10 @@ struct WorkingTreeView: View {
                     .frame(minWidth: 300, idealWidth: 360, maxHeight: .infinity)
                     .layoutPriority(1)
 
-                    DiffPane(viewModel: viewModel)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if !selection.isEmpty {
+                        DiffPane(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onChange(of: viewModel.selectedPath) { _, path in

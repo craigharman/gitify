@@ -87,8 +87,8 @@ struct SplitDiffView: View {
 
     private func background(_ line: DiffLine?) -> Color {
         switch line?.kind {
-        case .addition: .green.opacity(0.14)
-        case .deletion: .red.opacity(0.14)
+        case .addition: .green.opacity(0.22)
+        case .deletion: .red.opacity(0.22)
         default: line == nil ? Color(nsColor: .quaternaryLabelColor).opacity(0.25) : .clear
         }
     }

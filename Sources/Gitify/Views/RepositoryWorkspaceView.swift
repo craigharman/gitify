@@ -85,7 +85,7 @@ struct RepositoryWorkspaceView: View {
         }
         .background(TitlebarBrand())
         .toolbar {
-            ToolbarItemGroup {
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button { Task { await viewModel.fetch() } } label: {
                     Label("Fetch", systemImage: "arrow.down.circle")
                 }
@@ -116,9 +116,9 @@ struct RepositoryWorkspaceView: View {
                 .help("Push current branch").disabled(viewModel.isBusy || viewModel.remotes.isEmpty)
 
                 branchMenu
-            }
 
-            ToolbarItemGroup {
+                Divider()
+
                 if !hideAIFeatures {
                     Button {
                         if AIDefaults.hasAPIKey {

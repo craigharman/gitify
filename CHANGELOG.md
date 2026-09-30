@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.1](https://github.com/craigharman/gitify/compare/v1.16.0...v1.16.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* diff panel now remembers its width ([#42](https://github.com/craigharman/gitify/issues/42)) ([b9fa764](https://github.com/craigharman/gitify/commit/b9fa764c867a17ef19caa3ada6c8ed6bb3e5e571))
+
 ## [1.16.0](https://github.com/craigharman/gitify/compare/v1.15.0...v1.16.0) (2026-08-26)
 
 

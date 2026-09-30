@@ -69,7 +69,7 @@ struct DiffView: View {
         // so backgrounds span the full pane and long lines scroll horizontally.
         GeometryReader { geo in
             ScrollView([.vertical, .horizontal]) {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(diff.hunks) { hunk in
                         hunkHeader(hunk, width: geo.size.width)
                         ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
@@ -165,8 +165,8 @@ private struct DiffLineRow: View {
 
     private var background: Color {
         switch line.kind {
-        case .addition: return .green.opacity(0.14)
-        case .deletion: return .red.opacity(0.14)
+        case .addition: return .green.opacity(0.22)
+        case .deletion: return .red.opacity(0.22)
         case .context: return .clear
         }
     }

@@ -33,18 +33,18 @@ struct WorkingTreeView: View {
     var body: some View {
         if let status = viewModel.status {
             if status.hasChanges {
-                HSplitView {
+                PersistentSplitView(.horizontal, autosaveKey: "workingTree",
+                                    firstIdeal: 360, firstMin: 300, secondMin: 300,
+                                    showsSecond: !selection.isEmpty) {
                     VStack(spacing: 0) {
                         SearchField(text: $search, prompt: "Filter files")
                         fileList(status)
                         Divider()
                         CommitBox(viewModel: viewModel)
                     }
-                    .frame(minWidth: 300, idealWidth: 360, maxHeight: .infinity)
-                    .layoutPriority(1)
-
+                    .frame(maxHeight: .infinity)
+                } second: {
                     DiffPane(viewModel: viewModel)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onChange(of: viewModel.selectedPath) { _, path in
@@ -213,15 +213,10 @@ struct WorkingTreeView: View {
 }
 
 /// The diff side of the working-tree split: the selected file's diff, or a placeholder.
-/// A concrete view so the conditional doesn't change the split child's identity (which would
-/// reset the user's dragged divider on every selection).
 private struct DiffPane: View {
     let viewModel: RepositoryViewModel
 
     var body: some View {
-        // Wrapped in a GeometryReader so the pane reports the same (greedy, flexible) size whether
-        // the diff or the placeholder is shown — otherwise HSplitView redistributes width on the
-        // first selection (DiffView is itself a GeometryReader; the bare placeholder is not).
         GeometryReader { _ in
             if let diff = viewModel.currentDiff {
                 DiffView(diff: diff,

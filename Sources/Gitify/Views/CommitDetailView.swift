@@ -56,7 +56,8 @@ struct ChangesetDiffPane: View {
     @State private var loading = false
 
     var body: some View {
-        VSplitView {
+        PersistentSplitView(.vertical, autosaveKey: "changeset",
+                            firstIdeal: 220, firstMin: 140, secondMin: 120) {
             GeometryReader { _ in
                 if loading {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -64,10 +65,8 @@ struct ChangesetDiffPane: View {
                     changeList
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 140)
-
+        } second: {
             CommitFileDiffPane(fileDiff: fileDiff, imageDiffData: imageDiffData)
-                .frame(maxWidth: .infinity, minHeight: 120)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: ref) { await load() }
@@ -130,14 +129,11 @@ struct ChangesetDiffPane: View {
 }
 
 /// The diff side of the changeset split: the selected file's diff, or a placeholder.
-/// Concrete (not an inline if/else) so selecting a changed file doesn't reset the dragged divider.
 private struct CommitFileDiffPane: View {
     let fileDiff: FileDiff?
     var imageDiffData: ImageDiffData? = nil
 
     var body: some View {
-        // GeometryReader so the pane keeps a constant (greedy) size whether the diff or the
-        // placeholder is shown — otherwise VSplitView shifts the divider on file selection.
         GeometryReader { _ in
             if let fileDiff {
                 DiffView(diff: fileDiff, imageDiffData: imageDiffData)

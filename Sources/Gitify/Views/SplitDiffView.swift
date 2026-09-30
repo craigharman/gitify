@@ -49,7 +49,7 @@ struct SplitDiffView: View {
             // separator keeps rows from stretching.
             let column = max((geo.size.width - 1) / 2, 80)
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(rows) { row in
                         HStack(spacing: 0) {
                             side(row.left, isOld: true, width: column)
@@ -87,8 +87,8 @@ struct SplitDiffView: View {
 
     private func background(_ line: DiffLine?) -> Color {
         switch line?.kind {
-        case .addition: .green.opacity(0.14)
-        case .deletion: .red.opacity(0.14)
+        case .addition: .green.opacity(0.22)
+        case .deletion: .red.opacity(0.22)
         default: line == nil ? Color(nsColor: .quaternaryLabelColor).opacity(0.25) : .clear
         }
     }

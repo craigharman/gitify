@@ -20,7 +20,8 @@ struct HistoryView: View {
     }
 
     var body: some View {
-        HSplitView {
+        PersistentSplitView(.horizontal, autosaveKey: "history",
+                            firstIdeal: 480, firstMin: 380, secondMin: 300) {
             VStack(spacing: 0) {
                 SearchField(text: $search, prompt: "Filter commits")
                 if search.isEmpty {
@@ -29,24 +30,20 @@ struct HistoryView: View {
                     FilteredCommitList(commits: filtered, viewModel: viewModel, selection: $selection)
                 }
             }
-            .frame(minWidth: 380, idealWidth: 480, maxHeight: .infinity)
-            .layoutPriority(1)
+            .frame(maxHeight: .infinity)
+        } second: {
             CommitDetailPane(selection: selection, viewModel: viewModel)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 /// The inspector side of the history split: the selected commit's detail, or a placeholder.
-/// Concrete (not an inline if/else) so selection changes don't reset the dragged divider.
 private struct CommitDetailPane: View {
     let selection: Commit.ID?
     let viewModel: RepositoryViewModel
 
     var body: some View {
-        // GeometryReader so the pane keeps a constant (greedy) size whether the detail or the
-        // placeholder is shown — otherwise HSplitView shifts the divider on commit selection.
         GeometryReader { _ in
             if let selected = viewModel.commits.first(where: { $0.id == selection }) {
                 CommitDetailView(commit: selected, viewModel: viewModel)

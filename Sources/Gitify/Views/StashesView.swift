@@ -9,11 +9,11 @@ struct StashesView: View {
         if viewModel.stashes.isEmpty {
             emptyState
         } else {
-            HSplitView {
+            PersistentSplitView(.horizontal, autosaveKey: "stashes",
+                                firstIdeal: 320, firstMin: 280, secondMin: 360) {
                 stashList
-                    .frame(minWidth: 280, idealWidth: 320)
+            } second: {
                 StashDetailPane(selection: selection, viewModel: viewModel)
-                    .frame(minWidth: 360, maxWidth: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -91,14 +91,11 @@ struct StashesView: View {
 }
 
 /// The detail side of the stash split: the selected stash's changeset, or a placeholder.
-/// Concrete (not an inline if/else) so selection changes don't reset the dragged divider.
 private struct StashDetailPane: View {
     let selection: Stash.ID?
     let viewModel: RepositoryViewModel
 
     var body: some View {
-        // GeometryReader so the pane keeps a constant (greedy) size whether the changeset or the
-        // placeholder is shown — otherwise HSplitView shifts the divider on stash selection.
         GeometryReader { _ in
             if let stash = viewModel.stashes.first(where: { $0.id == selection }) {
                 ChangesetDiffPane(ref: stash.id, viewModel: viewModel)

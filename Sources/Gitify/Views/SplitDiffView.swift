@@ -73,7 +73,7 @@ struct SplitDiffView: View {
                 .frame(width: 40, alignment: .trailing)
                 .padding(.trailing, 6)
             if let line {
-                Text(SyntaxHighlighter.highlight(line.content.isEmpty ? " " : line.content, language: language))
+                Text(SyntaxHighlighter.highlight(DiffText.display(line.content), language: language))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }

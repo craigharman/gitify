@@ -1,5 +1,46 @@
 import SwiftUI
+import AppKit
 import GitKit
+
+/// Keeps diff text layout bounded. A single minified or generated line can be hundreds of
+/// KB, and laying that out as one CoreText line blocks the main thread for seconds.
+enum DiffText {
+    static let maxColumns = 1_000
+    static let tabWidth = 4
+
+    /// `content` with tabs expanded to spaces and capped at `maxColumns`, ending in an
+    /// ellipsis when cut.
+    static func display(_ content: String) -> String {
+        if content.isEmpty { return " " }
+        if content.utf8.count <= maxColumns, !content.contains("\t") { return content }
+        var out = ""
+        var column = 0
+        for ch in content {
+            if column >= maxColumns { out += " \u{2026}"; break }
+            if ch == "\t" {
+                let n = tabWidth - column % tabWidth
+                out += String(repeating: " ", count: n)
+                column += n
+            } else {
+                out.append(ch)
+                column += 1
+            }
+        }
+        return out
+    }
+
+    /// Estimated width of `text` in monospaced columns (wide characters count double).
+    static func columns(_ text: String) -> Int {
+        text.unicodeScalars.reduce(0) { $0 + ($1.value >= 0x1100 ? 2 : 1) }
+    }
+
+    /// Advance of one column in the body-size monospaced font.
+    static let columnWidth: CGFloat = {
+        let font = NSFont.monospacedSystemFont(ofSize: NSFont.preferredFont(forTextStyle: .body).pointSize,
+                                               weight: .regular)
+        return ceil(("0" as NSString).size(withAttributes: [.font: font]).width)
+    }()
+}
 
 /// Identifies a selectable diff line: its hunk id and index within that hunk.
 private struct LineRef: Hashable { let hunk: Int; let index: Int }
@@ -66,8 +107,11 @@ struct DiffView: View {
 
     private var diffBody: some View {
         // Each row is a single, non-wrapping line whose width is at least the viewport,
-        // so backgrounds span the full pane and long lines scroll horizontally.
+        // so backgrounds span the full pane and long lines scroll horizontally. The stack
+        // gets an explicit width up front; otherwise, inside a horizontal ScrollView, the
+        // LazyVStack must lay out every row's text just to learn how wide it is.
         GeometryReader { geo in
+            let rowWidth = max(geo.size.width, contentWidth)
             ScrollView([.vertical, .horizontal]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(diff.hunks) { hunk in
@@ -75,18 +119,30 @@ struct DiffView: View {
                         ForEach(Array(hunk.lines.enumerated()), id: \.offset) { index, line in
                             let ref = LineRef(hunk: hunk.id, index: index)
                             DiffLineRow(
-                                line: line, width: geo.size.width, language: language,
+                                line: line, width: rowWidth, language: language,
                                 selectable: onApplyLines != nil && !diff.isNew && line.kind != .context,
                                 isSelected: selected.contains(ref),
                                 onToggle: { toggle(ref) })
                         }
                     }
                 }
+                .frame(width: rowWidth, alignment: .leading)
                 .frame(minHeight: geo.size.height, alignment: .topLeading)
             }
             .font(.system(.body, design: .monospaced))
             .textSelection(.enabled)
         }
+    }
+
+    /// Width of the widest row, estimated from column counts (the font is monospaced).
+    private var contentWidth: CGFloat {
+        var widest = 0
+        for hunk in diff.hunks {
+            widest = max(widest, DiffText.columns(hunk.header))
+            for line in hunk.lines { widest = max(widest, DiffText.columns(DiffText.display(line.content))) }
+        }
+        // Selection toggle (16) + two gutters (44 each) + marker (14) + slack.
+        return 16 + 88 + 14 + 8 + CGFloat(widest) * DiffText.columnWidth
     }
 
     private func toggle(_ ref: LineRef) {
@@ -145,7 +201,7 @@ private struct DiffLineRow: View {
             Text(marker)
                 .frame(width: 14)
                 .foregroundStyle(.secondary)
-            Text(SyntaxHighlighter.highlight(line.content.isEmpty ? " " : line.content, language: language))
+            Text(SyntaxHighlighter.highlight(DiffText.display(line.content), language: language))
                 .fixedSize(horizontal: true, vertical: false) // never wrap; scroll instead
         }
         .padding(.vertical, 0.5)

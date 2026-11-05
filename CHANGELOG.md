@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.2](https://github.com/craigharman/gitify/compare/v1.16.1...v1.16.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* hang related to diff being uncapped ([#47](https://github.com/craigharman/gitify/issues/47)) ([93ee203](https://github.com/craigharman/gitify/commit/93ee203f79dad23908eb4610637c2c230e9bc5ce))
+
 ## [1.16.1](https://github.com/craigharman/gitify/compare/v1.16.0...v1.16.1) (2026-09-30)
 
 

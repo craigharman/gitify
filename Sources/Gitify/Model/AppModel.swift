@@ -165,6 +165,58 @@ final class AppModel {
         repositories.first { $0.id == selectedRepositoryID }
     }
 
+    // MARK: - Nesting (submodules)
+
+    /// The closest other repository whose working tree contains `ref` (e.g. a submodule's superproject).
+    private func container(of ref: RepositoryRef) -> RepositoryRef? {
+        repositories
+            .filter { $0.id != ref.id && $0.sshHost == ref.sshHost && ref.path.hasPrefix($0.path + "/") }
+            .max { $0.path.count < $1.path.count }
+    }
+
+    /// Repositories in list order, with each nested repository placed directly after the
+    /// repository that contains it, alongside its nesting depth.
+    var repositoryTree: [(ref: RepositoryRef, depth: Int)] {
+        var children: [RepositoryRef.ID: [RepositoryRef]] = [:]
+        var roots: [RepositoryRef] = []
+        for repo in repositories {
+            if let parent = container(of: repo) {
+                children[parent.id, default: []].append(repo)
+            } else {
+                roots.append(repo)
+            }
+        }
+        var result: [(ref: RepositoryRef, depth: Int)] = []
+        func visit(_ repo: RepositoryRef, depth: Int) {
+            result.append((repo, depth))
+            for child in children[repo.id] ?? [] { visit(child, depth: depth + 1) }
+        }
+        roots.forEach { visit($0, depth: 0) }
+        return result
+    }
+
+    /// Opens a submodule of `parent` as a repository in its own right, adding it if needed.
+    func openSubmodule(_ submodule: Submodule, of parent: RepositoryRef) async {
+        guard submodule.isInitialized else {
+            presentError("\u{201c}\(submodule.path)\u{201d} hasn\u{2019}t been initialized yet. Run Update / Init first.")
+            return
+        }
+        guard parent.isRemote else {
+            await add(directory: parent.url.appendingPathComponent(submodule.path))
+            return
+        }
+        let path = parent.path + "/" + submodule.path
+        if let existing = repositories.first(where: { $0.path == path && $0.sshHost == parent.sshHost }) {
+            selectedRepositoryID = existing.id
+            return
+        }
+        let ref = RepositoryRef(path: path, sshHost: parent.sshHost,
+                                sshUser: parent.sshUser, sshPort: parent.sshPort)
+        repositories.append(ref)
+        store.save(repositories)
+        selectedRepositoryID = ref.id
+    }
+
     /// Presents an open panel and adds the chosen directory if it is a git repository.
     func promptToAddRepository() async {
         let panel = NSOpenPanel()

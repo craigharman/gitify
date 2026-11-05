@@ -3,6 +3,7 @@ import GitKit
 
 struct SubmodulesView: View {
     let viewModel: RepositoryViewModel
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         Group {
@@ -31,7 +32,13 @@ struct SubmodulesView: View {
                             .buttonStyle(.borderless).font(.caption)
                     }
                     .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { open(submodule) }
+                    .help(submodule.isInitialized ? "Double-click to open \u{201c}\(submodule.path)\u{201d}" : "")
                     .contextMenu {
+                        Button("Open Submodule") { open(submodule) }
+                            .disabled(!submodule.isInitialized)
+                        Divider()
                         Button("Update / Init") { Task { await viewModel.updateSubmodules(path: submodule.path) } }
                         Button("Reveal in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting(
@@ -53,6 +60,10 @@ struct SubmodulesView: View {
             }
             .padding(8).background(.bar)
         }
+    }
+
+    private func open(_ submodule: Submodule) {
+        Task { await model.openSubmodule(submodule, of: viewModel.ref) }
     }
 
     private func addSubmodule() {

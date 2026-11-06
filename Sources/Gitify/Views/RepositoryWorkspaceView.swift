@@ -345,14 +345,18 @@ private struct RepoSwitcher: View {
 
     var body: some View {
         Menu {
-            ForEach(model.repositories) { repo in
+            ForEach(model.repositoryTree, id: \.ref.id) { repo, depth in
+                // Menus can't indent items, so nested repos (submodules) get a leading
+                // em-space indent plus a branch glyph to show they sit under their parent.
+                let title = depth == 0 ? repo.name
+                    : String(repeating: "\u{2003}", count: depth - 1) + "\u{2514} " + repo.name
                 Button {
                     model.selectedRepositoryID = repo.id
                 } label: {
                     if repo.id == current.id {
-                        Label(repo.name, systemImage: "checkmark")
+                        Label(title, systemImage: "checkmark")
                     } else {
-                        Text(repo.name)
+                        Text(title)
                     }
                 }
             }

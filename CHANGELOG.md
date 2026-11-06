@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.3](https://github.com/craigharman/gitify/compare/v1.16.2...v1.16.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* dock icon size and submodule handling ([#49](https://github.com/craigharman/gitify/issues/49)) ([6a6f997](https://github.com/craigharman/gitify/commit/6a6f9971839f9628076844c542b0db60ded61bc1))
+
 ## [1.16.2](https://github.com/craigharman/gitify/compare/v1.16.1...v1.16.2) (2026-11-05)
 
 

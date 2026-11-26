@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.4](https://github.com/craigharman/gitify/compare/v1.16.3...v1.16.4) (2026-11-26)
+
+
+### Bug Fixes
+
+* git graph now hides checkpoints ([#51](https://github.com/craigharman/gitify/issues/51)) ([be45fca](https://github.com/craigharman/gitify/commit/be45fcaf9c5779cbd4764ef1a00d131f2e829bdc))
+
 ## [1.16.3](https://github.com/craigharman/gitify/compare/v1.16.2...v1.16.3) (2026-11-06)
 
 

@@ -9,6 +9,7 @@ enum Checks {
         await test("status parses renames with original path", renameStatus)
         await test("log returns commits newest-first with parents", log)
         await test("log paginates and signals more pages", logPagination)
+        await test("default log shows branches/tags/HEAD, not private refs or stashes", logDefaultRefs)
         await test("refs lists branches and tags with HEAD/upstream", refs)
         await test("worktrees include main and linked", worktrees)
         await test("stashes listed newest-first with branch", stashes)
@@ -527,6 +528,31 @@ enum Checks {
         let last = try await repo.service().log(skip: 4, limit: 2, revisions: ["HEAD"])
         await expectEqual(last.commits.count, 1, "final page size")
         await expect(last.nextSkip == nil, "final page has no next")
+    }
+
+    static func logDefaultRefs() async throws {
+        let repo = try await TestRepository()
+        try await repo.commit("main commit")
+        // A commit reachable only from a tool's private ref.
+        try await repo.git("checkout", "-q", "-b", "scratch")
+        try await repo.commit("private checkpoint")
+        try await repo.git("update-ref", "refs/t3/checkpoints/x", "HEAD")
+        try await repo.git("checkout", "-q", "-")
+        try await repo.git("branch", "-q", "-D", "scratch")
+        // A stash, whose internal commits live under refs/stash.
+        try repo.write("file.txt", "dirty\n")
+        try await repo.git("stash", "-q")
+        // A commit reachable only from a tag.
+        try await repo.git("checkout", "-q", "--detach")
+        try await repo.commit("tagged commit")
+        try await repo.git("tag", "v1")
+        try await repo.git("checkout", "-q", "-")
+
+        let summaries = Set(try await repo.service().log(limit: 50).commits.map(\.summary))
+        await expect(summaries.contains("main commit"), "branch commit shown")
+        await expect(summaries.contains("tagged commit"), "tag-only commit shown")
+        await expect(!summaries.contains("private checkpoint"), "private ref hidden")
+        await expect(!summaries.contains { $0.hasPrefix("WIP on") || $0.hasPrefix("index on") }, "stash internals hidden")
     }
 
     static func refs() async throws {

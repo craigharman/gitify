@@ -243,7 +243,11 @@ public protocol GitService: Sendable {
 }
 
 public extension GitService {
-    func log(skip: Int = 0, limit: Int = 200, revisions: [String] = ["--all"]) async throws -> CommitPage {
+    /// The default revisions are what the graph shows: branches, remotes, tags and HEAD.
+    /// Not `--all`, which also pulls in stash internals and other tools' private refs
+    /// (e.g. `refs/t3/...` agent checkpoints, `refs/original/...` filter-branch backups).
+    func log(skip: Int = 0, limit: Int = 200,
+             revisions: [String] = ["--branches", "--remotes", "--tags", "HEAD"]) async throws -> CommitPage {
         try await log(skip: skip, limit: limit, revisions: revisions)
     }
 
